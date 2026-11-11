@@ -348,3 +348,68 @@ export function getQuestionDisplay(
     explanation: q.explanation
   };
 }
+
+
+// Online fallback for questions that do not contain a saved bilingual version.
+// The translated result is cached locally so a question is not translated again.
+const translationCache = new Map<string, string>();
+
+async function translateWithGoogle(text: string, targetLang: 'en' | 'hi'): Promise<string> {
+  const value = (text || '').trim();
+  if (!value) return text || '';
+  const cacheKey = `${targetLang}:${value}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(value)}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Translation request failed: ${response.status}`);
+    const data = await response.json();
+    const translated = Array.isArray(data?.[0])
+      ? data[0].map((part: any) => Array.isArray(part) ? part[0] : '').join('')
+      : '';
+    if (!translated.trim()) throw new Error('Empty translation response');
+    translationCache.set(cacheKey, translated);
+    return translated;
+  } catch (error) {
+    console.warn('Question translation unavailable; showing original text.', error);
+    return value;
+  }
+}
+
+/** Async bilingual display: keeps curated/saved translations, and translates all
+ * question content (stem, every option and explanation) when no saved version exists. */
+export async function getQuestionDisplayAsync(
+  q: Question,
+  targetLang: 'en' | 'hi'
+): Promise<TranslatedContent> {
+  if (!q) return { text: '', options: [], explanation: '' };
+
+  // Keep the hand-checked English translations already supplied for this set.
+  if (targetLang === 'en' && (TIME_AND_WORK_TRANSLATIONS[q.number] || SIGNATURE_MAP.some(sig => sig.match.test(q.text)))) {
+    return getQuestionDisplay(q, targetLang);
+  }
+
+  const explicitText = targetLang === 'en' ? q.textEnglish : q.textHindi;
+  const explicitOptions = targetLang === 'en' ? q.optionsEnglish : q.optionsHindi;
+  const explicitExplanation = targetLang === 'en' ? q.explanationEnglish : q.explanationHindi;
+
+  const sourceText = explicitText?.trim() ? explicitText : q.text;
+  const sourceOptions = explicitOptions?.length === q.options.length ? explicitOptions : q.options;
+  const sourceExplanation = explicitExplanation?.trim() ? explicitExplanation : q.explanation;
+
+  const translateIfNeeded = async (value: string): Promise<string> => {
+    if (!value?.trim()) return value || '';
+    const alreadyTarget = targetLang === 'en' ? !isHindiText(value) : isHindiText(value);
+    return alreadyTarget ? value : translateWithGoogle(value, targetLang);
+  };
+
+  const [text, options, explanation] = await Promise.all([
+    translateIfNeeded(sourceText),
+    Promise.all(sourceOptions.map(option => translateIfNeeded(option))),
+    translateIfNeeded(sourceExplanation || '')
+  ]);
+
+  return { text, options, explanation };
+}
