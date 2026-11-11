@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TestFolder,
   TestItem,
@@ -51,6 +51,55 @@ export function App() {
   const [currentActiveTest, setCurrentActiveTest] = useState<TestItem | null>(null);
   const [selectedAttemptForResult, setSelectedAttemptForResult] = useState<TestAttempt | null>(null);
   const [selectedTestIdForComparison, setSelectedTestIdForComparison] = useState<string | undefined>(undefined);
+
+  // Keep an in-app navigation entry for Android hardware Back / browser Back.
+  // Each entry remembers the current tab and the open folder, so Back returns
+  // one level at a time instead of closing the app immediately.
+  const skipNextNavigationEntry = useRef(false);
+  const currentNavigationRef = useRef({ tab: currentTab, folderId: selectedFolderId });
+  currentNavigationRef.current = { tab: currentTab, folderId: selectedFolderId };
+
+  useEffect(() => {
+    const makeState = () => ({
+      alphaWayNavigation: true,
+      tab: currentNavigationRef.current.tab,
+      folderId: currentNavigationRef.current.folderId
+    });
+
+    const handleBrowserBack = (event: PopStateEvent) => {
+      const state = event.state;
+
+      // If Back reaches the page before the app, keep the app open.
+      if (!state?.alphaWayNavigation) {
+        window.history.pushState(makeState(), '', window.location.href);
+        return;
+      }
+
+      skipNextNavigationEntry.current = true;
+      if (state.tab) setCurrentTab(state.tab as NavigationTab);
+      if (state.folderId === null || typeof state.folderId === 'string') {
+        setSelectedFolderId(state.folderId);
+      }
+      setIsMobileMenuOpen(false);
+      setIsZipModalOpen(false);
+    };
+
+    window.addEventListener('popstate', handleBrowserBack);
+    return () => window.removeEventListener('popstate', handleBrowserBack);
+  }, []);
+
+  useEffect(() => {
+    if (skipNextNavigationEntry.current) {
+      skipNextNavigationEntry.current = false;
+      return;
+    }
+
+    window.history.pushState({
+      alphaWayNavigation: true,
+      tab: currentTab,
+      folderId: selectedFolderId
+    }, '', window.location.href);
+  }, [currentTab, selectedFolderId]);
 
   // Initial Data Load
   const loadAllData = useCallback(async () => {
