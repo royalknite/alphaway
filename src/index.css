@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: make dark: utilities follow the app-controlled .dark class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
     font-family: 'Noto Sans Devanagari', 'Inter', system-ui, -apple-system, sans-serif;
