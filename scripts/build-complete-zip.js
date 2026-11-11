@@ -76,12 +76,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install Node Dependencies
         run: |
-          npm install --legacy-peer-deps
-          npm install --no-save @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
+          npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Verify Capacitor Packages
+        run: |
+          npx cap --version
 
       - name: Build Web Application
         run: |
