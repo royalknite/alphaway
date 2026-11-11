@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import {
   TestFolder,
   TestItem,
@@ -29,6 +30,7 @@ import { QuestionBankView } from './components/bank/QuestionBankView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AndroidExportModal } from './components/android/AndroidExportModal';
 import { BottomNav } from './components/common/BottomNav';
+import { ConfirmModal } from './components/common/ConfirmModal';
 
 export function App() {
   // Database states
@@ -44,6 +46,7 @@ export function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // Active / Selected contextual entities
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -52,54 +55,107 @@ export function App() {
   const [selectedAttemptForResult, setSelectedAttemptForResult] = useState<TestAttempt | null>(null);
   const [selectedTestIdForComparison, setSelectedTestIdForComparison] = useState<string | undefined>(undefined);
 
-  // Keep an in-app navigation entry for Android hardware Back / browser Back.
-  // Each entry remembers the current tab and the open folder, so Back returns
-  // one level at a time instead of closing the app immediately.
+  // Unified navigation history for Android hardware Back and browser Back.
+  // Each entry stores the exact screen context so nested folders and tests
+  // return to the screen the user came from.
   const skipNextNavigationEntry = useRef(false);
-  const currentNavigationRef = useRef({ tab: currentTab, folderId: selectedFolderId });
-  currentNavigationRef.current = { tab: currentTab, folderId: selectedFolderId };
+  const hasMountedNavigation = useRef(false);
+  const navigationDepth = useRef(0);
+  const currentNavigationRef = useRef({
+    tab: currentTab,
+    folderId: selectedFolderId,
+    testId: currentActiveTest?.id ?? null
+  });
+  currentNavigationRef.current = {
+    tab: currentTab,
+    folderId: selectedFolderId,
+    testId: currentActiveTest?.id ?? null
+  };
+
+  const makeNavigationState = useCallback((depth: number) => ({
+    alphaWayNavigation: true,
+    depth,
+    tab: currentNavigationRef.current.tab,
+    folderId: currentNavigationRef.current.folderId,
+    testId: currentNavigationRef.current.testId
+  }), []);
 
   useEffect(() => {
-    const makeState = () => ({
-      alphaWayNavigation: true,
-      tab: currentNavigationRef.current.tab,
-      folderId: currentNavigationRef.current.folderId
-    });
+    // Seed the WebView history so the first Back press is handled in-app.
+    if (!window.history.state?.alphaWayNavigation) {
+      navigationDepth.current = 0;
+      window.history.replaceState(makeNavigationState(0), '', window.location.href);
+    }
 
     const handleBrowserBack = (event: PopStateEvent) => {
       const state = event.state;
 
-      // If Back reaches the page before the app, keep the app open.
+      // Reaching the page underneath the app means the user is at the root.
       if (!state?.alphaWayNavigation) {
-        window.history.pushState(makeState(), '', window.location.href);
+        setShowExitConfirm(true);
+        window.history.pushState(makeNavigationState(0), '', window.location.href);
+        navigationDepth.current = 0;
         return;
       }
 
+      navigationDepth.current = Math.max(0, Number(state.depth) || 0);
       skipNextNavigationEntry.current = true;
       if (state.tab) setCurrentTab(state.tab as NavigationTab);
       if (state.folderId === null || typeof state.folderId === 'string') {
         setSelectedFolderId(state.folderId);
       }
+      if (state.testId) {
+        const matchingTest = tests.find(test => test.id === state.testId);
+        if (matchingTest) setCurrentActiveTest(matchingTest);
+      } else {
+        setCurrentActiveTest(null);
+      }
       setIsMobileMenuOpen(false);
       setIsZipModalOpen(false);
+      setShowExitConfirm(false);
     };
 
     window.addEventListener('popstate', handleBrowserBack);
-    return () => window.removeEventListener('popstate', handleBrowserBack);
-  }, []);
+
+    // Capacitor's native Android Back button does not reliably emit popstate
+    // by itself, so route it through the same WebView history.
+    let removeNativeListener: (() => void) | undefined;
+    CapacitorApp.addListener('backButton', () => {
+      if (showExitConfirm) {
+        setShowExitConfirm(false);
+        return;
+      }
+      if (navigationDepth.current > 0) {
+        window.history.back();
+      } else {
+        setShowExitConfirm(true);
+      }
+    }).then(listener => {
+      removeNativeListener = () => listener.remove();
+    }).catch(error => {
+      console.warn('Native back-button listener unavailable:', error);
+    });
+
+    return () => {
+      window.removeEventListener('popstate', handleBrowserBack);
+      removeNativeListener?.();
+    };
+  }, [makeNavigationState, tests, showExitConfirm]);
 
   useEffect(() => {
+    if (!hasMountedNavigation.current) {
+      hasMountedNavigation.current = true;
+      return;
+    }
     if (skipNextNavigationEntry.current) {
       skipNextNavigationEntry.current = false;
       return;
     }
 
-    window.history.pushState({
-      alphaWayNavigation: true,
-      tab: currentTab,
-      folderId: selectedFolderId
-    }, '', window.location.href);
-  }, [currentTab, selectedFolderId]);
+    const nextDepth = navigationDepth.current + 1;
+    navigationDepth.current = nextDepth;
+    window.history.pushState(makeNavigationState(nextDepth), '', window.location.href);
+  }, [currentTab, selectedFolderId, currentActiveTest?.id, makeNavigationState]);
 
   // Initial Data Load
   const loadAllData = useCallback(async () => {
@@ -376,7 +432,7 @@ export function App() {
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
         onSubmitExam={handleSubmitExamAttempt}
-        onExitWithoutSubmit={() => setCurrentTab('home')}
+        onExitWithoutSubmit={() => { setCurrentActiveTest(null); setCurrentTab('home'); }}
         onAutosaveState={handleAutosaveState}
       />
     );
@@ -389,7 +445,7 @@ export function App() {
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
         onSubmitPracticeAttempt={handleSubmitExamAttempt}
-        onExit={() => setCurrentTab('home')}
+        onExit={() => { setCurrentActiveTest(null); setCurrentTab('home'); }}
       />
     );
   }
@@ -602,6 +658,21 @@ export function App() {
       <BottomNav
         currentTab={currentTab}
         onNavigate={setCurrentTab}
+      />
+
+      <ConfirmModal
+        isOpen={showExitConfirm}
+        title="ऐप से बाहर निकलें?"
+        message="आप Home स्क्रीन पर हैं। क्या आप AlphaWay बंद करना चाहते हैं?"
+        confirmLabel="हाँ, बाहर निकलें"
+        cancelLabel="यहीं रहें"
+        onCancel={() => setShowExitConfirm(false)}
+        onConfirm={() => {
+          setShowExitConfirm(false);
+          CapacitorApp.exitApp().catch(() => {
+            // Browser preview cannot close the native application.
+          });
+        }}
       />
 
       {/* 5. Android APK & GitHub Actions Modal */}
