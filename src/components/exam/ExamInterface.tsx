@@ -23,7 +23,7 @@ import {
 import { TestItem, UserResponse, TestResult, TestAttempt, Question, AppSettings } from '../../types';
 import { soundManager } from '../../utils/audio';
 import { getTranslation, Language } from '../../utils/translations';
-import { getQuestionDisplay } from '../../utils/bilingualHelper';
+import { getQuestionDisplay, getQuestionDisplayAsync } from '../../utils/bilingualHelper';
 import { QuestionFigure } from '../common/QuestionFigure';
 
 interface ExamInterfaceProps {
@@ -434,10 +434,27 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
     visited: true
   };
 
-  // Get localized question presentation (English or Hindi based on user's preference)
-  const questionDisplay = useMemo(() => {
-    if (!currentQ) return { text: '', options: [], explanation: '' };
-    return getQuestionDisplay(currentQ, questionLang);
+  // Get localized question presentation. Saved bilingual text is instant;
+  // otherwise translate the question, every option and explanation asynchronously.
+  const [questionDisplay, setQuestionDisplay] = useState(() =>
+    currentQ ? getQuestionDisplay(currentQ, questionLang) : { text: '', options: [], explanation: '' }
+  );
+  const [isTranslatingQuestion, setIsTranslatingQuestion] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentQ) {
+      setQuestionDisplay({ text: '', options: [], explanation: '' });
+      return;
+    }
+    setQuestionDisplay(getQuestionDisplay(currentQ, questionLang));
+    setIsTranslatingQuestion(true);
+    getQuestionDisplayAsync(currentQ, questionLang).then(display => {
+      if (!cancelled) setQuestionDisplay(display);
+    }).finally(() => {
+      if (!cancelled) setIsTranslatingQuestion(false);
+    });
+    return () => { cancelled = true; };
   }, [currentQ, questionLang]);
 
   const isLowTime = remainingSeconds <= 300; // under 5 minutes
@@ -445,8 +462,8 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-100 dark:bg-slate-950 flex flex-col font-sans select-none overflow-hidden transition-colors">
       {/* 1. TOP EXAM HEADER */}
-      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex items-center justify-between shadow-xs shrink-0 gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <header className="relative z-50 min-h-16 h-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between shadow-xs shrink-0 gap-x-3 gap-y-2">
+        <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto">
           <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
             AW
           </div>
@@ -462,7 +479,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
         </div>
 
         {/* Center / Right: Pause Button + Countdown Timer + Question Language + Theme + Submit */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-2.5 w-full md:w-auto min-w-0">
           {/* PAUSE BUTTON ⏸️ */}
           <button
             type="button"
@@ -599,6 +616,11 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
               <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 leading-relaxed whitespace-pre-line">
                 {questionDisplay.text}
               </div>
+              {isTranslatingQuestion && (
+                <div className="mt-3 text-xs font-semibold text-blue-600 dark:text-blue-400" role="status">
+                  {questionLang === 'en' ? 'Translating question and options…' : 'प्रश्न और विकल्पों का अनुवाद हो रहा है…'}
+                </div>
+              )}
             </div>
 
             {/* Question Figure / Diagram (Non-Verbal / Vector / Image) */}
@@ -713,9 +735,19 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
           </div>
         </main>
 
+        {/* Mobile backdrop keeps the palette drawer separate from the question controls. */}
+        {isPaletteDrawerOpen && (
+          <button
+            type="button"
+            aria-label="Close question palette"
+            onClick={() => setIsPaletteDrawerOpen(false)}
+            className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden"
+          />
+        )}
+
         {/* RIGHT: QUESTION PALETTE */}
         <aside
-          className={`fixed lg:static top-16 bottom-0 right-0 z-40 w-80 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out ${
+          className={`fixed lg:static top-32 lg:top-auto bottom-0 right-0 z-40 w-80 max-w-[90vw] h-auto bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out ${
             isPaletteDrawerOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
           } ${isPaused ? 'filter blur-sm pointer-events-none' : ''}`}
         >
