@@ -66,28 +66,24 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install Node Dependencies
         run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
-
-      - name: Verify Capacitor Packages
-        run: |
-          npx cap --version
+          npm install --legacy-peer-deps
+          npm install --no-save @capacitor/core@^6.2.0 @capacitor/cli@^6.2.0 @capacitor/android@^6.2.0 @capacitor/assets@latest
 
       - name: Build Web Application
-        run: |
-          npm run build
+        run: npm run build
 
       - name: Add Capacitor Android Platform
         run: |
@@ -96,11 +92,17 @@ jobs:
           fi
           npx cap sync android
 
-      - name: Make Gradle Executable
+      - name: Generate AlphaWay Android App Icon
         run: |
-          if [ -f "android/gradlew" ]; then
-            chmod +x android/gradlew
+          if [ -f "resources/icon.png" ]; then
+            npx capacitor-assets generate --android
+          else
+            echo "resources/icon.png not found"
+            exit 1
           fi
+
+      - name: Make Gradle Executable
+        run: chmod +x android/gradlew
 
       - name: Build Debug APK with Gradle
         working-directory: android
