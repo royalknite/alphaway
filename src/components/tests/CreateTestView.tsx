@@ -71,6 +71,9 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState('');
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [pdfError, setPdfError] = useState('');
   const [showFigureBuilder, setShowFigureBuilder] = useState(false);
 
   const handleAddFigureQuestion = (newQuestion: Question) => {
@@ -130,15 +133,34 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPdfFileName(file.name);
+    setPdfError('');
+    setPdfStatus('PDF चुनी गई है। फ़ाइल पढ़ी जा रही है...');
+    if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setPdfError('कृपया PDF फ़ाइल ही चुनें।');
+      setPdfStatus('');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setPdfError('PDF 20 MB से बड़ी है। कृपया छोटी PDF चुनें।');
+      setPdfStatus('');
+      e.target.value = '';
+      return;
+    }
     const provider = settings.pdfAiProvider || 'gemini';
     const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
     if (!apiKey?.trim()) {
-      alert(`पहले Settings में ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key जोड़ें।`);
+      const message = `पहले Settings में ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key जोड़ें।`;
+      setPdfError(message);
+      setPdfStatus('');
+      alert(message);
       e.target.value = '';
       return;
     }
     setIsSubmitting(true);
     try {
+      setPdfStatus('PDF पढ़ी जा रही है और AI को भेजने की तैयारी हो रही है...');
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -148,6 +170,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
         reader.onerror = () => reject(new Error('PDF पढ़ा नहीं जा सका।'));
         reader.readAsDataURL(file);
       });
+      setPdfStatus(`${provider === 'openai' ? 'OpenAI' : 'Gemini'} AI को PDF भेजी जा रही है। कृपया प्रतीक्षा करें...`);
       const prompt = `इस PDF में दिए गए सभी MCQ प्रश्नों को क्रम से निकालो। प्रश्न और विकल्पों का मूल text, भाषा, spelling, संख्या, formula और option order ज्यों का त्यों रखो। जिस विकल्प/उत्तर पर पीली highlight strip है, उसी को correctAnswerIndex मानो (A=0,B=1,C=2,D=3)। कोई प्रश्न छूटना नहीं चाहिए। केवल valid JSON दो, markdown नहीं: {"questions":[{"number":1,"text":"प्रश्न","options":["A विकल्प","B विकल्प","C विकल्प","D विकल्प"],"correctAnswerIndex":0,"explanation":""}]}. अगर किसी प्रश्न की पीली पट्टी स्पष्ट नहीं है तो correctAnswerIndex:-1 रखो; अनुमान मत लगाओ।`;
       let response: Response;
       let payload: any;
@@ -171,6 +194,8 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
         if (!response.ok) throw new Error(payload?.error?.message || `Gemini API error (${response.status})`);
         raw = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('') || '';
       }
+      if (!raw.trim()) throw new Error('AI से खाली जवाब मिला। API Key, इंटरनेट और Provider सेटिंग जाँचें।');
+      setPdfStatus('AI का जवाब मिला। प्रश्नों को व्यवस्थित किया जा रहा है...');
       const parsed = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
       const imported: Question[] = (parsed.questions || []).map((q: any, i: number) => ({
         id: `pdf_${Date.now()}_${i}`, number: Number(q.number) || i + 1, text: String(q.text || ''),
@@ -178,16 +203,22 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
         correctAnswerIndex: Number.isInteger(q.correctAnswerIndex) && q.correctAnswerIndex >= 0 && q.correctAnswerIndex <= 3 ? q.correctAnswerIndex : 0,
         explanation: String(q.explanation || '')
       })).filter((q: Question) => q.text.trim() && q.options.length >= 2);
-      if (!imported.length) throw new Error('PDF से कोई वैध प्रश्न नहीं मिला।');
+      if (!imported.length) throw new Error('PDF से कोई MCQ नहीं निकला। PDF स्कैन/इमेज वाली हो सकती है या AI ने प्रश्न पहचान नहीं पाए।');
       const rawText = imported.map((q, i) => `${i + 1}. ${q.text}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('\n')}\nउत्तर: ${String.fromCharCode(65 + q.correctAnswerIndex)}`).join('\n\n');
       setTxtContent(rawText);
       setParsedData({ questions: imported, totalParsed: imported.length, errors: [], rawText });
       setTestTitle(file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() || 'PDF Mock Test');
       setDurationMinutes(Math.max(10, imported.length));
       setActiveTab('preview');
-      alert(`${imported.length} प्रश्न PDF से इम्पोर्ट हुए। कृपया सही उत्तर एक बार जाँच लें।`);
+      const unknownAnswers = imported.filter((q) => q.correctAnswerIndex < 0).length;
+      const successMessage = `${imported.length} प्रश्न सफलतापूर्वक निकले। ${unknownAnswers ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं—Preview में विकल्प पर टैप करके चुनें।` : 'पीली Highlight वाले उत्तर Preview में जाँच लें।'}`;
+      setPdfStatus(successMessage);
+      alert(successMessage);
     } catch (error: any) {
-      alert(`PDF Import असफल: ${error.message || error}`);
+      const message = error?.message || String(error);
+      setPdfError(message);
+      setPdfStatus('PDF से प्रश्न नहीं निकल पाए। नीचे Error देखें।');
+      alert(`PDF Import असफल: ${message}`);
     } finally {
       setIsSubmitting(false);
       e.target.value = '';
@@ -226,6 +257,12 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
       : parseFloat(negativeMarkingType);
 
   const handleSave = async () => {
+    const unansweredCount = parsedData.questions.filter((q) => q.correctAnswerIndex < 0).length;
+    if (unansweredCount > 0) {
+      alert(`${unansweredCount} प्रश्नों का सही उत्तर अभी चुना नहीं गया है। Preview में हर प्रश्न के सही विकल्प पर टैप करें।`);
+      setActiveTab('preview');
+      return;
+    }
     if (parsedData.questions.length === 0) {
       alert('कृपया कम से कम एक वैध प्रश्न जोड़ें। (Please add at least 1 valid question)');
       return;
@@ -298,9 +335,9 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
                   className="hidden"
                 />
               </label>
-              <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-sm shrink-0">
-                <FileUp size={16} />
-                <span>Upload PDF (AI)</span>
+              <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl ${isSubmitting ? 'bg-violet-400' : 'bg-violet-600 hover:bg-violet-700'} text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-sm shrink-0`}>
+                {isSubmitting ? <RefreshCw size={16} className="animate-spin" /> : <FileUp size={16} />}
+                <span>{isSubmitting ? 'PDF प्रोसेस हो रही है...' : 'Upload PDF (AI)'}</span>
                 <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} className="hidden" disabled={isSubmitting} />
               </label>
 
@@ -356,6 +393,15 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
                 </button>
               </div>
             </div>
+
+            {(pdfFileName || pdfStatus || pdfError) && (
+              <div className={`rounded-xl border p-3 text-xs space-y-1 ${pdfError ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200'}`}>
+                {pdfFileName && <div className="font-bold break-all">चुनी गई PDF: {pdfFileName}</div>}
+                {pdfStatus && <div className="flex items-center gap-2">{isSubmitting && <RefreshCw size={14} className="animate-spin shrink-0" />}<span>{pdfStatus}</span></div>}
+                {pdfError && <div className="font-semibold">Error: {pdfError}</div>}
+                {!isSubmitting && pdfStatus && !pdfError && parsedData.questions.length > 0 && <div>निकले हुए प्रश्न: {parsedData.questions.length} — Preview टैब में देखें।</div>}
+              </div>
+            )}
 
             {/* Parsing Stats Bar */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs">
