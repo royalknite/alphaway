@@ -1,4 +1,5 @@
 import { Question } from '../types';
+import { normalizeHindiText } from './hindiNormalizer';
 
 export interface ParseResult {
   questions: Question[];
@@ -42,7 +43,7 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
   const commitCurrentQuestion = () => {
     if (state === 'IDLE' && !currentQuestionText) return;
 
-    const trimmedText = currentQuestionText.trim();
+    const trimmedText = normalizeHindiText(currentQuestionText.trim());
     if (!trimmedText) return;
 
     // Validate options
@@ -65,16 +66,49 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
       currentCorrectIndex = 0;
     }
 
+    // Auto-detect table structure if question text contains box/row/column patterns (e.g. बारंबारता बंटन)
+    let finalFigureType = currentFigureType;
+    let finalFigureData = currentFigureData;
+
+    if (!finalFigureType && (trimmedText.includes('बारंबारता') || trimmedText.includes('बंटन') || trimmedText.includes('सारणी') || trimmedText.includes('तालिका'))) {
+      const textLines = trimmedText.split('\n');
+      const tableLines = textLines.filter(l => l.includes('|') || /\b\d+\s+\d+\b/.test(l.trim()));
+      if (tableLines.length >= 2) {
+        const rows: string[][] = [];
+        let headers: string[] = ['मान (x)', 'बारंबारता (f)'];
+        for (const tl of tableLines) {
+          if (tl.includes('मान') && tl.includes('बारंबारता')) {
+            headers = tl.split(/[|\t,]/).map(s => s.trim()).filter(Boolean);
+          } else {
+            const parts = tl.includes('|')
+              ? tl.split('|').map(s => s.trim()).filter(Boolean)
+              : tl.trim().split(/\s+/).filter(Boolean);
+            if (parts.length >= 2) {
+              rows.push(parts);
+            }
+          }
+        }
+        if (rows.length >= 2) {
+          finalFigureType = 'table';
+          finalFigureData = {
+            title: 'बारंबारता बंटन (Frequency Distribution)',
+            headers,
+            rows
+          };
+        }
+      }
+    }
+
     questions.push({
       id: `q_${Date.now()}_${questions.length + 1}_${Math.random().toString(36).substring(2, 7)}`,
       number: currentQuestionNumber || questions.length + 1,
       text: trimmedText,
-      options: [...currentOptions],
+      options: currentOptions.map(opt => normalizeHindiText(opt)),
       correctAnswerIndex: currentCorrectIndex,
-      explanation: currentExplanation.trim(),
+      explanation: normalizeHindiText(currentExplanation.trim()),
       subject: defaultSubject,
-      figureType: currentFigureType,
-      figureData: currentFigureData,
+      figureType: finalFigureType,
+      figureData: finalFigureData,
       imageUrl: currentImageUrl,
       optionImages: currentOptionImages.some(Boolean) ? [...currentOptionImages] : undefined
     });

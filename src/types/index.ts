@@ -14,8 +14,7 @@ export interface Question {
   optionsEnglish?: string[];
   explanationHindi?: string;
   explanationEnglish?: string;
-  // Non-Verbal & Figure Reasoning support
-  figureType?: 'image' | 'mirror' | 'water' | 'dice' | 'triangles' | 'venn' | 'series' | 'completion' | 'embedded' | 'paper_cut';
+  figureType?: 'image' | 'mirror' | 'water' | 'dice' | 'triangles' | 'venn' | 'series' | 'completion' | 'embedded' | 'paper_cut' | 'table' | 'bar_chart' | 'pie_chart' | 'line_chart' | 'data_interpretation' | 'math_formula';
   figureData?: any;
   imageUrl?: string;
   optionImages?: (string | null)[];

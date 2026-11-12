@@ -23,6 +23,11 @@ import {
   RRB_ALP_2026_QUESTIONS,
   RRB_ALP_2026_RAW_TXT
 } from '../utils/rrbExtractedQuestions';
+import {
+  SECTION_MATH_DI_TEST,
+  SECTION_MATH_DI_QUESTIONS,
+  SECTION_MATH_DI_RAW_TXT
+} from '../utils/sectionExtractedQuestions';
 
 const DB_NAME = 'AlphaWayPlatformDB';
 const DB_VERSION = 1;
@@ -594,22 +599,11 @@ class AlphaWayDatabase {
         });
       }
 
-      const existingRrb = await this.get<TestItem>(STORES.TESTS, 'test_rrb_alp_2026_cbt1');
-      if (!existingRrb) {
-        await this.saveTest(RRB_ALP_2026_TEST);
-      }
-      const existingRrbCol = await this.get<QuestionCollection>(STORES.COLLECTIONS, 'col_rrb_alp_2026');
-      if (!existingRrbCol) {
-        await this.saveCollection({
-          id: 'col_rrb_alp_2026',
-          name: 'RRB ALP 2026 CBT 1 (Official Answer Key Collection)',
-          description: '12 official RRB ALP questions extracted with green tick ✅ correct answers',
-          questions: RRB_ALP_2026_QUESTIONS,
-          rawTxt: RRB_ALP_2026_RAW_TXT,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        });
-      }
+      // Cleanup any previously seeded reference tests per user request
+      await this.delete(STORES.TESTS, 'test_rrb_alp_2026_cbt1');
+      await this.delete(STORES.COLLECTIONS, 'col_rrb_alp_2026');
+      await this.delete(STORES.TESTS, 'test_section_math_di');
+      await this.delete(STORES.COLLECTIONS, 'col_section_math_di');
     } catch (err) {
       console.warn('Failed to ensure PDF test exists:', err);
     }

@@ -223,13 +223,7 @@ export const AllTestsView: React.FC<AllTestsViewProps> = ({
                     </div>
                   )}
 
-                  {test.id === 'test_rrb_alp_2026_cbt1' && (
-                    <div className="mb-1.5">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-400 font-black text-[10px] shadow-2xs">
-                        <span>🟢 Official RRB PDF (Green Tick ✅ Answers)</span>
-                      </span>
-                    </div>
-                  )}
+
 
                   <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1 line-clamp-2">
                     {test.title}

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { QuestionCollection, Question, TestItem, TestFolder } from '../../types';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { QuestionFigure } from '../common/QuestionFigure';
 
 interface QuestionBankViewProps {
   collections: QuestionCollection[];
@@ -223,6 +224,8 @@ export const QuestionBankView: React.FC<QuestionBankViewProps> = ({
                     <div className="text-sm font-bold text-slate-900 dark:text-white leading-relaxed font-hindi">
                       {q.text}
                     </div>
+
+                    <QuestionFigure question={q} />
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       {q.options.map((opt, optIdx) => {
