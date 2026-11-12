@@ -36,7 +36,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultNegativeMarking: 0.25,
   soundEnabled: true,
   confirmBeforeSubmit: true,
-  autoSaveIntervalSeconds: 2
+  autoSaveIntervalSeconds: 2,
+  geminiApiKey: '',
+  openaiApiKey: '',
+  pdfAiProvider: 'gemini'
 };
 
 class AlphaWayDatabase {
