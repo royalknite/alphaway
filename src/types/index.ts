@@ -124,6 +124,9 @@ export interface AppSettings {
   soundEnabled: boolean;
   confirmBeforeSubmit: boolean;
   autoSaveIntervalSeconds: number;
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+  pdfAiProvider?: 'gemini' | 'openai';
 }
 
 export interface ActiveExamState {
