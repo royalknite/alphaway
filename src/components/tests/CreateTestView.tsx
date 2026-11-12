@@ -19,7 +19,7 @@ import {
   Trash2,
   X
 } from 'lucide-react';
-import { TestFolder, TestItem, TestConfig, Question } from '../../types';
+import { TestFolder, TestItem, TestConfig, Question, AppSettings } from '../../types';
 import {
   parseQuestionsFromTxt,
   SAMPLE_TEST_TXT_TIME_AND_WORK,
@@ -36,13 +36,15 @@ interface CreateTestViewProps {
   preselectedFolderId?: string;
   onSaveTest: (test: TestItem, rawTxt: string) => Promise<void>;
   onCancel: () => void;
+  settings: AppSettings;
 }
 
 export const CreateTestView: React.FC<CreateTestViewProps> = ({
   folders,
   preselectedFolderId,
   onSaveTest,
-  onCancel
+  onCancel,
+  settings
 }) => {
   // Step 1: Input TXT & Parse
   const [txtContent, setTxtContent] = useState<string>(SAMPLE_TEST_TXT_BIHAR_DAROGA);
@@ -123,6 +125,73 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       }
     };
     reader.readAsText(file, 'UTF-8');
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const provider = settings.pdfAiProvider || 'gemini';
+    const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+    if (!apiKey?.trim()) {
+      alert(`पहले Settings में ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key जोड़ें।`);
+      e.target.value = '';
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const data = String(reader.result || '');
+          resolve(data.includes(',') ? data.split(',')[1] : data);
+        };
+        reader.onerror = () => reject(new Error('PDF पढ़ा नहीं जा सका।'));
+        reader.readAsDataURL(file);
+      });
+      const prompt = `इस PDF में दिए गए सभी MCQ प्रश्नों को क्रम से निकालो। प्रश्न और विकल्पों का मूल text, भाषा, spelling, संख्या, formula और option order ज्यों का त्यों रखो। जिस विकल्प/उत्तर पर पीली highlight strip है, उसी को correctAnswerIndex मानो (A=0,B=1,C=2,D=3)। कोई प्रश्न छूटना नहीं चाहिए। केवल valid JSON दो, markdown नहीं: {"questions":[{"number":1,"text":"प्रश्न","options":["A विकल्प","B विकल्प","C विकल्प","D विकल्प"],"correctAnswerIndex":0,"explanation":""}]}. अगर किसी प्रश्न की पीली पट्टी स्पष्ट नहीं है तो correctAnswerIndex:-1 रखो; अनुमान मत लगाओ।`;
+      let response: Response;
+      let payload: any;
+      let raw = '';
+      if (provider === 'openai') {
+        response = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey.trim()}` },
+          body: JSON.stringify({ model: 'gpt-4.1-mini', input: [{ role: 'user', content: [{ type: 'input_text', text: `${prompt}
+
+Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, file_data: `data:application/pdf;base64,${base64}` }] }], text: { format: { type: 'json_object' } }, temperature: 0.1 })
+        });
+        payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || `OpenAI API error (${response.status})`);
+        raw = payload?.output?.flatMap((item: any) => item.content || []).map((part: any) => part.text || '').join('') || '';
+      } else {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey.trim())}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: base64 } }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+        });
+        payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || `Gemini API error (${response.status})`);
+        raw = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('') || '';
+      }
+      const parsed = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
+      const imported: Question[] = (parsed.questions || []).map((q: any, i: number) => ({
+        id: `pdf_${Date.now()}_${i}`, number: Number(q.number) || i + 1, text: String(q.text || ''),
+        options: Array.isArray(q.options) ? q.options.map((v: any) => String(v)) : [],
+        correctAnswerIndex: Number.isInteger(q.correctAnswerIndex) && q.correctAnswerIndex >= 0 && q.correctAnswerIndex <= 3 ? q.correctAnswerIndex : 0,
+        explanation: String(q.explanation || '')
+      })).filter((q: Question) => q.text.trim() && q.options.length >= 2);
+      if (!imported.length) throw new Error('PDF से कोई वैध प्रश्न नहीं मिला।');
+      const rawText = imported.map((q, i) => `${i + 1}. ${q.text}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('\n')}\nउत्तर: ${String.fromCharCode(65 + q.correctAnswerIndex)}`).join('\n\n');
+      setTxtContent(rawText);
+      setParsedData({ questions: imported, totalParsed: imported.length, errors: [], rawText });
+      setTestTitle(file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() || 'PDF Mock Test');
+      setDurationMinutes(Math.max(10, imported.length));
+      setActiveTab('preview');
+      alert(`${imported.length} प्रश्न PDF से इम्पोर्ट हुए। कृपया सही उत्तर एक बार जाँच लें।`);
+    } catch (error: any) {
+      alert(`PDF Import असफल: ${error.message || error}`);
+    } finally {
+      setIsSubmitting(false);
+      e.target.value = '';
+    }
   };
 
   const handleTxtChange = (newTxt: string) => {
@@ -228,6 +297,11 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onChange={handleFileUpload}
                   className="hidden"
                 />
+              </label>
+              <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-sm shrink-0">
+                <FileUp size={16} />
+                <span>Upload PDF (AI)</span>
+                <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} className="hidden" disabled={isSubmitting} />
               </label>
 
               {/* Add Question with Image / PDF Button */}
