@@ -171,7 +171,18 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
         reader.readAsDataURL(file);
       });
       setPdfStatus(`${provider === 'openai' ? 'OpenAI' : 'Gemini'} AI को PDF भेजी जा रही है। कृपया प्रतीक्षा करें...`);
-      const prompt = `इस PDF में दिए गए सभी MCQ प्रश्नों को क्रम से निकालो। प्रश्न और विकल्पों का मूल text, भाषा, spelling, संख्या, formula और option order ज्यों का त्यों रखो। जिस विकल्प/उत्तर पर पीली highlight strip है, उसी को correctAnswerIndex मानो (A=0,B=1,C=2,D=3)। कोई प्रश्न छूटना नहीं चाहिए। केवल valid JSON दो, markdown नहीं: {"questions":[{"number":1,"text":"प्रश्न","options":["A विकल्प","B विकल्प","C विकल्प","D विकल्प"],"correctAnswerIndex":0,"explanation":""}]}. अगर किसी प्रश्न की पीली पट्टी स्पष्ट नहीं है तो correctAnswerIndex:-1 रखो; अनुमान मत लगाओ।`;
+      const prompt = `TASK: EXACT SOURCE EXTRACTION, NOT QUESTION GENERATION.
+Read EVERY page of the attached PDF from first to last. Count every visible MCQ question block in the entire document independently, then extract every one exactly once in source order.
+STRICT RULES:
+- Copy ONLY questions visibly present in this PDF. Never create, complete, replace, paraphrase, translate, simplify, or add questions. Never change the subject. Maths source means Maths only; never substitute GK or general knowledge.
+- Preserve original question numbering, wording, language, spelling, digits, units, fractions, formulas, symbols, punctuation, and exact A/B/C/D option order and text.
+- Process ALL pages. Do not stop after 5 questions or any arbitrary limit. Do not omit long questions.
+- Identify the yellow highlighted option from the page image: A=0, B=1, C=2, D=3. If unclear, use -1. Never guess and never default to A.
+- Return sourceQuestionCount (total visible MCQs) and exactly that many questions. If text is partly unreadable, include the question number and readable content; do not invent missing content.
+- Exclude headers, dates, ads, footers, performance percentages and Telegram promotions.
+Return valid JSON only:
+{"sourceQuestionCount":0,"subject":"visible subject or empty string","questions":[{"number":1,"text":"exact source question","options":["exact A","exact B","exact C","exact D"],"correctAnswerIndex":-1,"explanation":""}]}
+The example values are placeholders only; use the actual count and original question numbers found in THIS PDF.`;
       let response: Response;
       let payload: any;
       let raw = '';
@@ -180,7 +191,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey.trim()}` },
           body: JSON.stringify({ model: 'gpt-4.1-mini', input: [{ role: 'user', content: [{ type: 'input_text', text: `${prompt}
 
-Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, file_data: `data:application/pdf;base64,${base64}` }] }], text: { format: { type: 'json_object' } }, temperature: 0.1 })
+Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, file_data: `data:application/pdf;base64,${base64}` }] }], text: { format: { type: 'json_object' } }, max_output_tokens: 12000, temperature: 0.1 })
         });
         payload = await response.json();
         if (!response.ok) throw new Error(payload?.error?.message || `OpenAI API error (${response.status})`);
@@ -188,7 +199,7 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
       } else {
         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey.trim())}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: base64 } }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: base64 } }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 12000, temperature: 0.1 } })
         });
         payload = await response.json();
         if (!response.ok) throw new Error(payload?.error?.message || `Gemini API error (${response.status})`);
@@ -197,14 +208,28 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
       if (!raw.trim()) throw new Error('AI से खाली जवाब मिला। API Key, इंटरनेट और Provider सेटिंग जाँचें।');
       setPdfStatus('AI का जवाब मिला। प्रश्नों को व्यवस्थित किया जा रहा है...');
       const parsed = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
-      const imported: Question[] = (parsed.questions || []).map((q: any, i: number) => ({
-        id: `pdf_${Date.now()}_${i}`, number: Number(q.number) || i + 1, text: String(q.text || ''),
+      const sourceQuestionCount = Number(parsed.sourceQuestionCount);
+      const imported: Question[] = (Array.isArray(parsed.questions) ? parsed.questions : []).map((q: any, i: number) => ({
+        id: `pdf_${Date.now()}_${i}`,
+        number: Number.isFinite(Number(q.number)) ? Number(q.number) : i + 1,
+        text: String(q.text || ''),
         options: Array.isArray(q.options) ? q.options.map((v: any) => String(v)) : [],
-        correctAnswerIndex: Number.isInteger(q.correctAnswerIndex) && q.correctAnswerIndex >= 0 && q.correctAnswerIndex <= 3 ? q.correctAnswerIndex : 0,
+        // Preserve unknown answer as -1; never silently mark option A.
+        correctAnswerIndex: Number.isInteger(q.correctAnswerIndex) && q.correctAnswerIndex >= 0 && q.correctAnswerIndex <= 3 ? q.correctAnswerIndex : -1,
         explanation: String(q.explanation || '')
       })).filter((q: Question) => q.text.trim() && q.options.length >= 2);
       if (!imported.length) throw new Error('PDF से कोई MCQ नहीं निकला। PDF स्कैन/इमेज वाली हो सकती है या AI ने प्रश्न पहचान नहीं पाए।');
-      const rawText = imported.map((q, i) => `${i + 1}. ${q.text}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('\n')}\nउत्तर: ${String.fromCharCode(65 + q.correctAnswerIndex)}`).join('\n\n');
+      if (!Number.isInteger(sourceQuestionCount) || sourceQuestionCount < 1) {
+        throw new Error('AI ने PDF में कुल प्रश्नों की संख्या नहीं बताई। दोबारा import करें; अधूरी extraction सेव नहीं की गई।');
+      }
+      if (imported.length !== sourceQuestionCount) {
+        throw new Error(`PDF में AI के अनुसार ${sourceQuestionCount} प्रश्न हैं, लेकिन केवल ${imported.length} निकले। अधूरी extraction के कारण टेस्ट सेव नहीं किया गया।`);
+      }
+      const questionNumbers = imported.map((q) => q.number);
+      if (new Set(questionNumbers).size !== questionNumbers.length) {
+        throw new Error('कुछ प्रश्न नंबर दोहराए गए हैं। गलत/अधूरी extraction के कारण टेस्ट सेव नहीं किया गया।');
+      }
+      const rawText = imported.map((q) => `${q.number}. ${q.text}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('\n')}\nउत्तर: ${q.correctAnswerIndex >= 0 ? String.fromCharCode(65 + q.correctAnswerIndex) : 'अस्पष्ट - जाँच आवश्यक'}`).join('\n\n');
       setTxtContent(rawText);
       setParsedData({ questions: imported, totalParsed: imported.length, errors: [], rawText });
       setTestTitle(file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() || 'PDF Mock Test');
