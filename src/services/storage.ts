@@ -13,6 +13,11 @@ import {
   SAMPLE_TEST_TXT_SSC_CGL,
   parseQuestionsFromTxt
 } from '../utils/txtParser';
+import {
+  TIME_SPEED_DISTANCE_TEST,
+  TIME_SPEED_DISTANCE_QUESTIONS,
+  TIME_SPEED_DISTANCE_RAW_TXT
+} from '../utils/pdfExtractedQuestions';
 
 const DB_NAME = 'AlphaWayPlatformDB';
 const DB_VERSION = 1;
@@ -519,6 +524,7 @@ class AlphaWayDatabase {
     await this.saveTest(test1);
     await this.saveTest(test2);
     await this.saveTest(test3);
+    await this.saveTest(TIME_SPEED_DISTANCE_TEST);
 
     // Save initial question collections in the Question Bank
     await this.saveCollection({
@@ -540,6 +546,40 @@ class AlphaWayDatabase {
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
+
+    await this.saveCollection({
+      id: 'col_time_speed_distance',
+      name: 'Time Speed & Distance (Q-20) - PDF Collection',
+      description: '20 Railway & SSC Math questions extracted directly from PDF with yellow highlight answers',
+      questions: TIME_SPEED_DISTANCE_QUESTIONS,
+      rawTxt: TIME_SPEED_DISTANCE_RAW_TXT,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  }
+
+  // Ensures that the PDF-extracted test is always available even if database was seeded earlier
+  public async ensurePdfTestExists(): Promise<void> {
+    try {
+      const existing = await this.get<TestItem>(STORES.TESTS, 'test_time_speed_distance_q20');
+      if (!existing) {
+        await this.saveTest(TIME_SPEED_DISTANCE_TEST);
+      }
+      const existingCol = await this.get<QuestionCollection>(STORES.COLLECTIONS, 'col_time_speed_distance');
+      if (!existingCol) {
+        await this.saveCollection({
+          id: 'col_time_speed_distance',
+          name: 'Time Speed & Distance (Q-20) - PDF Collection',
+          description: '20 Railway & SSC Math questions extracted directly from PDF with yellow highlight answers',
+          questions: TIME_SPEED_DISTANCE_QUESTIONS,
+          rawTxt: TIME_SPEED_DISTANCE_RAW_TXT,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to ensure PDF test exists:', err);
+    }
   }
 }
 

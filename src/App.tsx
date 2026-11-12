@@ -161,6 +161,7 @@ export function App() {
   const loadAllData = useCallback(async () => {
     try {
       await db.seedDefaultDataIfNeeded();
+      await db.ensurePdfTestExists();
 
       const [loadedFolders, loadedTests, loadedAttempts, loadedCollections, loadedSettings, activeState] =
         await Promise.all([
@@ -558,6 +559,7 @@ export function App() {
               preselectedFolderId={preselectedFolderForNewTest}
               onSaveTest={handleSaveTest}
               onCancel={() => setCurrentTab('home')}
+              settings={settings}
             />
           )}
 
