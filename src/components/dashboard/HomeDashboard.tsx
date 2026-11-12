@@ -95,54 +95,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       )}
 
-      {/* Featured PDF Test Banner (Extracted from User PDF) */}
-      {(() => {
-        const pdfTest = tests.find(t => t.id === 'test_time_speed_distance_q20');
-        if (!pdfTest) return null;
-
-        return (
-          <div className="bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-3xl p-5 sm:p-6 text-slate-950 shadow-lg border-2 border-amber-300 relative overflow-hidden">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950 text-amber-300 text-xs font-bold shadow-xs">
-                  <Sparkles size={13} className="text-amber-400" />
-                  <span>PDF से बना टेस्ट (पीली पट्टी = सही उत्तर)</span>
-                </div>
-                <h3 className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight">
-                  {pdfTest.title}
-                </h3>
-                <p className="text-xs sm:text-sm font-semibold text-slate-900 max-w-2xl leading-relaxed">
-                  आपकी PDF (<strong>Pdf_Question_6a2cc3c8.pdf</strong>) से बिना एक भी प्रश्न छोड़े सभी 20 वस्तुनिष्ठ प्रश्न शत-प्रतिशत एक्सट्रैक्ट किए गए हैं।
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs font-bold text-slate-950">
-                  <span className="bg-white/80 dark:bg-slate-900/10 px-2.5 py-1 rounded-lg border border-amber-500/30">कुल 20 प्रश्न (Q46 - Q65)</span>
-                  <span className="bg-white/80 dark:bg-slate-900/10 px-2.5 py-1 rounded-lg border border-amber-500/30">समय: 20 मिनट</span>
-                  <span className="bg-white/80 dark:bg-slate-900/10 px-2.5 py-1 rounded-lg border border-amber-500/30">+1 सही / -0.25 नकारात्मक</span>
-                  <span className="bg-amber-200 text-amber-950 px-2.5 py-1 rounded-lg font-black border border-amber-400">🟡 Yellow Highlighted Options = Answer</span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full md:w-auto shrink-0">
-                <button
-                  onClick={() => onStartTest(pdfTest, 'exam')}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-950 hover:bg-slate-900 text-white font-black text-sm shadow-md transition-all active:scale-95 cursor-pointer"
-                >
-                  <Play size={16} className="text-amber-400 fill-amber-400" />
-                  <span>परीक्षा शुरू करें (Exam)</span>
-                </button>
-                <button
-                  onClick={() => onStartTest(pdfTest, 'practice')}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/90 hover:bg-white text-slate-950 font-bold text-sm shadow-sm transition-all active:scale-95 cursor-pointer"
-                >
-                  <CheckCircle2 size={16} className="text-emerald-700" />
-                  <span>अभ्यास मोड (Practice)</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Hero Textbook Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-900 text-white p-6 sm:p-8 md:p-10 shadow-xl">
         {/* Decorative background shapes */}
