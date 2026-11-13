@@ -545,6 +545,70 @@ export const QuestionFigure: React.FC<QuestionFigureProps> = ({ question, classN
           </div>
         )}
 
+        {/* -------------------- LINE CHART -------------------- */}
+        {figureType === 'line_chart' && (
+          <div className="w-full flex flex-col items-center">
+            {figureData.title && (
+              <div className="flex items-center gap-2 mb-2 text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 font-hindi text-center">
+                <span>📈 {figureData.title}</span>
+              </div>
+            )}
+            {(() => {
+              const points: Array<{ x: string; y: number }> = figureData.points || [];
+              const maxY = Math.max(...points.map(p => Number(p.y) || 0), 5);
+              const w = 320;
+              const h = 170;
+              const padL = 42;
+              const padB = 28;
+              const padT = 18;
+              const padR = 18;
+              const plotW = w - padL - padR;
+              const plotH = h - padT - padB;
+              const stepX = points.length > 1 ? plotW / (points.length - 1) : plotW;
+              const coords = points.map((p, idx) => ({
+                xPos: padL + idx * stepX,
+                yPos: padT + plotH * (1 - (Number(p.y) || 0) / maxY),
+                val: p.y,
+                label: p.x
+              }));
+              const polylinePoints = coords.map(c => `${c.xPos},${c.yPos}`).join(' ');
+
+              return (
+                <div className="w-full overflow-x-auto flex flex-col items-center">
+                  <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-w-md h-auto">
+                    {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
+                      const yP = padT + plotH * (1 - pct);
+                      const labelVal = Number((maxY * pct).toFixed(1));
+                      return (
+                        <g key={i}>
+                          <line x1={padL} y1={yP} x2={w - padR} y2={yP} className="stroke-slate-200 dark:stroke-slate-700 stroke-1" />
+                          <text x={padL - 6} y={yP + 3} textAnchor="end" className="text-[9px] font-mono fill-slate-400">
+                            {labelVal}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    {coords.length > 1 && (
+                      <polyline points={polylinePoints} fill="none" className="stroke-blue-600 dark:stroke-blue-400 stroke-2" />
+                    )}
+                    {coords.map((c, i) => (
+                      <g key={i}>
+                        <circle cx={c.xPos} cy={c.yPos} r={4} className="fill-blue-600 dark:fill-blue-400 stroke-white dark:stroke-slate-900 stroke-1" />
+                        <text x={c.xPos} y={c.yPos - 7} textAnchor="middle" className="text-[9px] font-bold font-mono fill-slate-800 dark:fill-slate-200">
+                          {c.val}
+                        </text>
+                        <text x={c.xPos} y={h - 8} textAnchor="middle" className="text-[9px] font-bold fill-slate-600 dark:fill-slate-300 font-hindi">
+                          {c.label}
+                        </text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* -------------------- MATHEMATICAL FORMULA -------------------- */}
         {figureType === 'math_formula' && (
           <div className="flex flex-col items-center py-2 px-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">

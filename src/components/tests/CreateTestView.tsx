@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Settings,
-  Sparkles,
   Save,
   HelpCircle,
   Eye,
@@ -22,25 +21,11 @@ import {
 import { TestFolder, TestItem, TestConfig, Question, AppSettings } from '../../types';
 import {
   parseQuestionsFromTxt,
-  SAMPLE_TEST_TXT_TIME_AND_WORK,
   SAMPLE_TEST_TXT_BIHAR_DAROGA,
   SAMPLE_TEST_TXT_RAILWAY,
-  SAMPLE_TEST_TXT_SSC_CGL,
-  SAMPLE_TEST_TXT_NON_VERBAL_REASONING
+  SAMPLE_TEST_TXT_SSC_CGL
 } from '../../utils/txtParser';
-import {
-  TIME_SPEED_DISTANCE_RAW_TXT,
-  TIME_SPEED_DISTANCE_QUESTIONS
-} from '../../utils/pdfExtractedQuestions';
-import {
-  RRB_ALP_2026_RAW_TXT,
-  RRB_ALP_2026_QUESTIONS
-} from '../../utils/rrbExtractedQuestions';
-import {
-  SECTION_MATH_DI_RAW_TXT,
-  SECTION_MATH_DI_QUESTIONS
-} from '../../utils/sectionExtractedQuestions';
-import { normalizeHindiText } from '../../utils/hindiNormalizer';
+import { extractQuestionsFromPdf } from '../../utils/pdfExtractor';
 import { QuestionFigure } from '../common/QuestionFigure';
 import { AttachImageQuestionModal } from './AttachImageQuestionModal';
 
@@ -87,6 +72,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   const [pdfStatus, setPdfStatus] = useState('');
   const [pdfFileName, setPdfFileName] = useState('');
   const [pdfError, setPdfError] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [showFigureBuilder, setShowFigureBuilder] = useState(false);
 
   const handleAddFigureQuestion = (newQuestion: Question) => {
@@ -148,262 +134,76 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     if (!file) return;
     setPdfFileName(file.name);
     setPdfError('');
+    setSaveError('');
     setPdfStatus('PDF चुनी गई है। फ़ाइल पढ़ी जा रही है...');
+
     if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setPdfError('कृपया PDF फ़ाइल ही चुनें।');
       setPdfStatus('');
       e.target.value = '';
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      setPdfError('PDF 20 MB से बड़ी है। कृपया छोटी PDF चुनें।');
+    if (file.size > 30 * 1024 * 1024) {
+      setPdfError('PDF 30 MB से बड़ी है। कृपया छोटी PDF चुनें।');
       setPdfStatus('');
       e.target.value = '';
       return;
     }
+
     const provider = settings.pdfAiProvider || 'gemini';
-    const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+    const userApiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
 
-    const fileNameLower = file.name.toLowerCase();
-
-    // 1. Official Section / Answer Key PDF (Green tick ✅, DI charts, Bar graph, Pie chart, Line graph, Mean/Mode Table)
-    const isSectionPdf =
-      fileNameLower.includes('section') ||
-      fileNameLower.includes('991285ad') ||
-      fileNameLower.includes('bar_graph') ||
-      fileNameLower.includes('pie_chart') ||
-      fileNameLower.includes('frequency') ||
-      fileNameLower.includes('mean') ||
-      (file.size > 800000 && file.size < 930000);
-
-    if (isSectionPdf) {
-      setIsSubmitting(true);
-      setPdfStatus('आधिकारिक उत्तर कुंजी PDF स्कैन हो रही है... हरे टिक (Green Tick ✅) वाले उत्तरों के साथ सभी 17 प्रश्न, बार ग्राफ, पाई चार्ट, लाइन ग्राफ एवं बारंबारता बंटन सारणी (Mean/Mode Table) एक्सट्रैक्ट हो रहे हैं...');
-      setTimeout(() => {
-        setTxtContent(SECTION_MATH_DI_RAW_TXT);
-        setParsedData({
-          questions: SECTION_MATH_DI_QUESTIONS,
-          totalParsed: SECTION_MATH_DI_QUESTIONS.length,
-          errors: [],
-          rawText: SECTION_MATH_DI_RAW_TXT
-        });
-        setTestTitle('Section Math & DI (Official Answer Key - 17 Questions)');
-        setDurationMinutes(25);
-        setMarksPerQuestion(1);
-        setNegativeMarkingType('0.33');
-        setActiveTab('preview');
-        const successMessage = '✅ आधिकारिक PDF से बिना एक भी प्रश्न छोड़े सभी 17 प्रश्न एक्सट्रैक्ट हो गए! हरे टिक (Green Tick ✅) वाले उत्तरों को शत-प्रतिशत सही माना गया है तथा बार ग्राफ, पाई चार्ट, लाइन ग्राफ एवं बारंबारता सारणी (Mean/Mode Table) को रेंडर कर दिया गया है।';
-        setPdfStatus(successMessage);
-        setIsSubmitting(false);
-      }, 350);
-      e.target.value = '';
-      return;
-    }
-
-    // 2. Official RRB ALP Answer Key PDF (Green tick ✅ correct answers)
-    const isRrbPdf =
-      fileNameLower.includes('rrb') ||
-      fileNameLower.includes('alp') ||
-      fileNameLower.includes('34d9f554') ||
-      fileNameLower.includes('loco') ||
-      fileNameLower.includes('recruitment') ||
-      (file.size > 220000 && file.size < 450000);
-
-    if (isRrbPdf) {
-      setIsSubmitting(true);
-      setPdfStatus('RRB ALP उत्तर कुंजी PDF स्कैन हो रही है... हरे टिक (Green Tick ✅) वाले उत्तरों के साथ सभी 12 प्रश्न एक्सट्रैक्ट हो रहे हैं...');
-      setTimeout(() => {
-        setTxtContent(RRB_ALP_2026_RAW_TXT);
-        setParsedData({
-          questions: RRB_ALP_2026_QUESTIONS,
-          totalParsed: RRB_ALP_2026_QUESTIONS.length,
-          errors: [],
-          rawText: RRB_ALP_2026_RAW_TXT
-        });
-        setTestTitle('RRB ALP 2026 CBT 1 (Official Answer Key)');
-        setDurationMinutes(15);
-        setMarksPerQuestion(1);
-        setNegativeMarkingType('0.33');
-        setActiveTab('preview');
-        const successMessage = '✅ RRB PDF से बिना एक भी प्रश्न छोड़े सभी 12 प्रश्न एक्सट्रैक्ट हो गए! हरे टिक (Green Tick ✅) वाले विकल्पों को शत-प्रतिशत सही उत्तर माना गया है।';
-        setPdfStatus(successMessage);
-        setIsSubmitting(false);
-      }, 350);
-      e.target.value = '';
-      return;
-    }
-
-    // 3. Time Speed & Distance PDF (Yellow Highlight correct answers)
-    const isUserPdf =
-      fileNameLower.includes('pdf_question') ||
-      fileNameLower.includes('time') ||
-      fileNameLower.includes('speed') ||
-      fileNameLower.includes('distance') ||
-      Math.abs(file.size - 949573) < 80000 ||
-      !apiKey?.trim();
-
-    if (isUserPdf) {
-      setIsSubmitting(true);
-      setPdfStatus('PDF स्कैन हो रही है... सभी 20 प्रश्न एक्सट्रैक्ट हो रहे हैं...');
-      setTimeout(() => {
-        setTxtContent(TIME_SPEED_DISTANCE_RAW_TXT);
-        setParsedData({
-          questions: TIME_SPEED_DISTANCE_QUESTIONS,
-          totalParsed: TIME_SPEED_DISTANCE_QUESTIONS.length,
-          errors: [],
-          rawText: TIME_SPEED_DISTANCE_RAW_TXT
-        });
-        setTestTitle('Time Speed & Distance (Q-20) - PDF Extracted Test');
-        setDurationMinutes(20);
-        setMarksPerQuestion(1);
-        setNegativeMarkingType('0.25');
-        setActiveTab('preview');
-        const successMessage = '✅ PDF से बिना एक भी प्रश्न छोड़े सभी 20 प्रश्न एक्सट्रैक्ट हो गए! पीली पट्टी (Yellow Highlight) वाले उत्तरों को शत-प्रतिशत सही माना गया है।';
-        setPdfStatus(successMessage);
-        setIsSubmitting(false);
-      }, 350);
-      e.target.value = '';
-      return;
-    }
-
-    if (!apiKey?.trim()) {
-      const message = `पहले Settings में ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key जोड़ें।`;
-      setPdfError(message);
-      setPdfStatus('');
-      alert(message);
-      e.target.value = '';
-      return;
-    }
     setIsSubmitting(true);
     try {
-      setPdfStatus('PDF पढ़ी जा रही है और AI को भेजने की तैयारी हो रही है...');
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const data = String(reader.result || '');
-          resolve(data.includes(',') ? data.split(',')[1] : data);
-        };
-        reader.onerror = () => reject(new Error('PDF पढ़ा नहीं जा सका।'));
-        reader.readAsDataURL(file);
+      const result = await extractQuestionsFromPdf(file, {
+        provider,
+        userApiKey,
+        onProgress: (status) => setPdfStatus(status)
       });
-      setPdfStatus(`${provider === 'openai' ? 'OpenAI' : 'Gemini'} AI को PDF भेजी जा रही है। कृपया प्रतीक्षा करें...`);
-      const prompt = `TASK: EXACT SOURCE EXTRACTION, NOT QUESTION GENERATION.
-Read EVERY page of the attached PDF from first to last. Count every visible MCQ question block in the entire document independently, then extract every one exactly once in source order.
-STRICT RULES:
-- Copy ONLY questions visibly present in this PDF. Never create, complete, replace, paraphrase, translate, simplify, or add questions. Never change the subject. Maths source means Maths only; never substitute GK or general knowledge.
-- Preserve original question numbering, wording, language, spelling, digits, units, fractions, formulas, symbols, punctuation, and exact A/B/C/D option order and text.
-- Clean Hindi text: Always provide valid, natural Hindi Devanagari Unicode without splitting letters or matras with spaces (e.g. write "निम्न" not "नि म्न", "ज्ञात" not "ज्ञा त", "कीजिए" not "की जि ए", "अनुपात" not "अनुपानुपात", "किसी" not "कि सी").
-- Process ALL pages. Do not stop after 5 questions or any arbitrary limit. Do not omit long questions.
-- IDENTIFY CORRECT ANSWER: Look for a GREEN TICK MARK (✅, ✔, green checkmark) next to the option, or a yellow highlighted option box. A=0, B=1, C=2, D=3. If unclear, use -1. Never guess and never default to A.
-- DETECT FIGURES, TABLES & DATA INTERPRETATION (DI):
-  * If a question has a statistical or frequency distribution table (box / row / column for mean, median, mode, बारंबारता बंटन):
-    "figureType": "table", "figureData": { "title": "...", "headers": ["..."], "rows": [["..."]] }
-  * If a question has a Bar Chart or Multi-bar chart:
-    "figureType": "bar_chart", "figureData": { "title": "...", "categories": [...], "series": [{ "name": "...", "values": [...] }] }
-  * If a question has a Pie Chart:
-    "figureType": "pie_chart", "figureData": { "title": "...", "slices": [{ "label": "...", "percentage": ... }] }
-  * If a question has a mathematical fraction/expression:
-    "figureType": "math_formula", "figureData": { "numerator": "...", "denominator": "..." }
-- Return sourceQuestionCount (total visible MCQs) and exactly that many questions.
-- Exclude headers, dates, ads, footers, performance percentages and Telegram promotions.
-Return valid JSON only:
-{"sourceQuestionCount":0,"subject":"visible subject or empty string","questions":[{"number":1,"text":"exact source question","options":["exact A","exact B","exact C","exact D"],"correctAnswerIndex":-1,"explanation":"","figureType":"table|bar_chart|pie_chart|math_formula|null","figureData":{}}]}`;
-      let response: Response;
-      let payload: any;
-      let raw = '';
-      if (provider === 'openai') {
-        response = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey.trim()}` },
-          body: JSON.stringify({ model: 'gpt-4.1-mini', input: [{ role: 'user', content: [{ type: 'input_text', text: `${prompt}
 
-Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, file_data: `data:application/pdf;base64,${base64}` }] }], text: { format: { type: 'json_object' } }, max_output_tokens: 12000, temperature: 0.1 })
-        });
-        payload = await response.json();
-        if (!response.ok) throw new Error(payload?.error?.message || `OpenAI API error (${response.status})`);
-        raw = payload?.output?.flatMap((item: any) => item.content || []).map((part: any) => part.text || '').join('') || '';
-      } else {
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey.trim())}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: base64 } }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 12000, temperature: 0.1 } })
-        });
-        payload = await response.json();
-        if (!response.ok) throw new Error(payload?.error?.message || `Gemini API error (${response.status})`);
-        raw = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('') || '';
+      const imported = result.questions;
+      if (!imported.length) {
+        throw new Error('PDF से कोई MCQ प्रश्न नहीं निकला। कृपया जाँचें कि PDF में पठनीय MCQ प्रश्न हैं या नहीं।');
       }
-      if (!raw.trim()) throw new Error('AI से खाली जवाब मिला। API Key, इंटरनेट और Provider सेटिंग जाँचें।');
-      setPdfStatus('AI का जवाब मिला। प्रश्नों को व्यवस्थित किया जा रहा है...');
-      const parsed = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
-      const sourceQuestionCount = Number(parsed.sourceQuestionCount);
-      const imported: Question[] = (Array.isArray(parsed.questions) ? parsed.questions : []).map((q: any, i: number) => {
-        const text = normalizeHindiText(String(q.text || ''));
-        const options = (Array.isArray(q.options) ? q.options : []).map((v: any) => normalizeHindiText(String(v)));
-        const explanation = normalizeHindiText(String(q.explanation || ''));
 
-        let figType = q.figureType;
-        let figData = q.figureData;
+      const rawText = imported
+        .map(
+          (q, idx) =>
+            `${idx + 1}. ${q.text}\n${q.options
+              .map((o, j) => `${String.fromCharCode(65 + j)}) ${o}${j === q.correctAnswerIndex ? ' ✅' : ''}`)
+              .join('\n')}${q.explanation ? `\nEx: ${q.explanation}` : ''}`
+        )
+        .join('\n\n');
 
-        // Auto-detect table structure if statistical frequency distribution table is in text
-        if (!figType && (text.includes('बारंबारता') || text.includes('बंटन') || text.includes('सारणी') || text.includes('|'))) {
-          const textLines = text.split('\n');
-          const tableLines = textLines.filter((l: string) => l.includes('|') || /\b\d+\s+\d+\b/.test(l.trim()));
-          if (tableLines.length >= 2) {
-            const rows: string[][] = [];
-            let headers = ['मान (x)', 'बारंबारता (f)'];
-            for (const tl of tableLines) {
-              if (tl.includes('मान') && tl.includes('बारंबारता')) {
-                headers = tl.split(/[|\t,]/).map((s: string) => s.trim()).filter(Boolean);
-              } else {
-                const parts = tl.includes('|')
-                  ? tl.split('|').map((s: string) => s.trim()).filter(Boolean)
-                  : tl.trim().split(/\s+/).filter(Boolean);
-                if (parts.length >= 2) rows.push(parts);
-              }
-            }
-            if (rows.length >= 2) {
-              figType = 'table';
-              figData = { title: 'बारंबारता बंटन (Frequency Distribution)', headers, rows };
-            }
-          }
-        }
-
-        return {
-          id: `pdf_${Date.now()}_${i}`,
-          number: Number.isFinite(Number(q.number)) ? Number(q.number) : i + 1,
-          text,
-          options,
-          correctAnswerIndex: Number.isInteger(q.correctAnswerIndex) && q.correctAnswerIndex >= 0 && q.correctAnswerIndex <= 3 ? q.correctAnswerIndex : -1,
-          explanation,
-          figureType: figType,
-          figureData: figData
-        };
-      }).filter((q: Question) => q.text.trim() && q.options.length >= 2);
-
-      if (!imported.length) throw new Error('PDF से कोई MCQ नहीं निकला। PDF स्कैन/इमेज वाली हो सकती है या AI ने प्रश्न पहचान नहीं पाए।');
-      if (!Number.isInteger(sourceQuestionCount) || sourceQuestionCount < 1) {
-        throw new Error('AI ने PDF में कुल प्रश्नों की संख्या नहीं बताई। दोबारा import करें; अधूरी extraction सेव नहीं की गई।');
-      }
-      if (imported.length !== sourceQuestionCount) {
-        throw new Error(`PDF में AI के अनुसार ${sourceQuestionCount} प्रश्न हैं, लेकिन केवल ${imported.length} निकले। अधूरी extraction के कारण टेस्ट सेव नहीं किया गया।`);
-      }
-      const questionNumbers = imported.map((q) => q.number);
-      if (new Set(questionNumbers).size !== questionNumbers.length) {
-        throw new Error('कुछ प्रश्न नंबर दोहराए गए हैं। गलत/अधूरी extraction के कारण टेस्ट सेव नहीं किया गया।');
-      }
-      const rawText = imported.map((q) => `${q.number}. ${q.text}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('\n')}\nउत्तर: ${q.correctAnswerIndex >= 0 ? String.fromCharCode(65 + q.correctAnswerIndex) : 'अस्पष्ट - जाँच आवश्यक'}`).join('\n\n');
       setTxtContent(rawText);
-      setParsedData({ questions: imported, totalParsed: imported.length, errors: [], rawText });
-      setTestTitle(file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() || 'PDF Mock Test');
+      setParsedData({
+        questions: imported,
+        totalParsed: imported.length,
+        errors: [],
+        rawText
+      });
+
+      const cleanTitle = file.name
+        .replace(/\.pdf$/i, '')
+        .replace(/__[\w]+/g, '')
+        .replace(/[_-]+/g, ' ')
+        .trim();
+      setTestTitle(cleanTitle || 'PDF Mock Test');
       setDurationMinutes(Math.max(10, imported.length));
       setActiveTab('preview');
+
       const unknownAnswers = imported.filter((q) => q.correctAnswerIndex < 0).length;
-      const successMessage = `${imported.length} प्रश्न सफलतापूर्वक निकले। ${unknownAnswers ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं—Preview में विकल्प पर टैप करके चुनें।` : 'हरे टिक (Green Tick ✅) एवं पीली Highlight वाले उत्तर Preview में जाँच लें।'}`;
+      const figureCount = imported.filter((q) => q.imageUrl || q.figureType || q.optionImages?.some(Boolean)).length;
+      const successMessage = `✅ ${result.totalPages} पेज से कुल ${imported.length} प्रश्न सफलतापूर्वक निकाले गए${figureCount > 0 ? ` (${figureCount} चित्र/टेबल/चार्ट सहित)` : ''}। ${
+        unknownAnswers > 0
+          ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं — नीचे Preview में सही विकल्प पर टैप करके चुनें।`
+          : 'सभी सही उत्तर (Green Tick ✅ / Highlight) अपने आप पहचान लिए गए हैं।'
+      }`;
       setPdfStatus(successMessage);
-      alert(successMessage);
     } catch (error: any) {
       const message = error?.message || String(error);
       setPdfError(message);
-      setPdfStatus('PDF से प्रश्न नहीं निकल पाए। नीचे Error देखें।');
-      alert(`PDF Import असफल: ${message}`);
+      setPdfStatus('PDF से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
     } finally {
       setIsSubmitting(false);
       e.target.value = '';
@@ -442,19 +242,20 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
       : parseFloat(negativeMarkingType);
 
   const handleSave = async () => {
+    setSaveError('');
     const unansweredCount = parsedData.questions.filter((q) => q.correctAnswerIndex < 0).length;
     if (unansweredCount > 0) {
-      alert(`${unansweredCount} प्रश्नों का सही उत्तर अभी चुना नहीं गया है। Preview में हर प्रश्न के सही विकल्प पर टैप करें।`);
+      setSaveError(`${unansweredCount} प्रश्नों का सही उत्तर अभी चुना नहीं गया है। Preview में हर प्रश्न के सही विकल्प पर टैप करें।`);
       setActiveTab('preview');
       return;
     }
     if (parsedData.questions.length === 0) {
-      alert('कृपया कम से कम एक वैध प्रश्न जोड़ें। (Please add at least 1 valid question)');
+      setSaveError('कृपया कम से कम एक वैध प्रश्न जोड़ें। (Please add at least 1 valid question)');
       return;
     }
     const folderToUse = selectedFolderId || (folders.length > 0 ? folders[0].id : '');
     if (!folderToUse) {
-      alert('कृपया टेस्ट सुरक्षित करने के लिए एक बुक फोल्डर चुनें। (Please select a folder)');
+      setSaveError('कृपया टेस्ट सुरक्षित करने के लिए एक बुक फोल्डर चुनें। (Please select a folder)');
       return;
     }
 
@@ -543,21 +344,6 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
 
                 <button
                   type="button"
-                  onClick={() => handleLoadSample(SAMPLE_TEST_TXT_NON_VERBAL_REASONING, 'Non-Verbal Reasoning (चित्रात्मक तर्कशक्ति - 10 प्रश्न)')}
-                  className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300 hover:bg-purple-200 whitespace-nowrap font-bold flex items-center gap-1"
-                >
-                  <Sparkles size={11} className="text-purple-600 dark:text-purple-400" />
-                  चित्र प्रश्न (Non-Verbal) ⭐
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample(SAMPLE_TEST_TXT_TIME_AND_WORK, 'समय और कार्य टेस्ट (Time & Work Mock Test)')}
-                  className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-200 whitespace-nowrap font-bold"
-                >
-                  Time & Work (20 प्रश्न) ⭐
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleLoadSample(SAMPLE_TEST_TXT_BIHAR_DAROGA, 'Bihar Daroga Mock Test')}
                   className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 whitespace-nowrap font-medium"
                 >
@@ -581,10 +367,22 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
             </div>
 
             {(pdfFileName || pdfStatus || pdfError) && (
-              <div className={`rounded-xl border p-3 text-xs space-y-1 ${pdfError ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200'}`}>
+              <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${pdfError ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200'}`}>
                 {pdfFileName && <div className="font-bold break-all">चुनी गई PDF: {pdfFileName}</div>}
                 {pdfStatus && <div className="flex items-center gap-2">{isSubmitting && <RefreshCw size={14} className="animate-spin shrink-0" />}<span>{pdfStatus}</span></div>}
-                {pdfError && <div className="font-semibold">Error: {pdfError}</div>}
+                {pdfError && (
+                  <div className="space-y-1.5">
+                    <div className="font-semibold">Error: {pdfError}</div>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                    >
+                      <RefreshCw size={12} />
+                      <span>पेज रिफ्रेश करें (Reload Page)</span>
+                    </button>
+                  </div>
+                )}
                 {!isSubmitting && pdfStatus && !pdfError && parsedData.questions.length > 0 && <div>निकले हुए प्रश्न: {parsedData.questions.length} — Preview टैब में देखें।</div>}
               </div>
             )}
@@ -676,8 +474,10 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-slate-400">
-                            सही उत्तर: Option {String.fromCharCode(65 + q.correctAnswerIndex)} ✅
+                          <span className={`text-[11px] font-semibold ${q.correctAnswerIndex >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                            {q.correctAnswerIndex >= 0
+                              ? `सही उत्तर: Option ${String.fromCharCode(65 + q.correctAnswerIndex)} ✅`
+                              : 'सही उत्तर: अस्पष्ट (विकल्प चुनें)'}
                           </span>
                           <button
                             type="button"
@@ -806,8 +606,8 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
                                 />
 
                                 {isCorrect && (
-                                  <span className="shrink-0 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-300 text-amber-950 dark:bg-amber-400 dark:text-slate-950 flex items-center gap-1 shadow-2xs">
-                                    <span>पीली पट्टी</span>
+                                  <span className="shrink-0 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-600 text-white flex items-center gap-1 shadow-2xs">
+                                    <span>सही</span>
                                     <Check size={11} strokeWidth={3} />
                                   </span>
                                 )}
@@ -1134,6 +934,12 @@ Output must be valid JSON only.` }, { type: 'input_file', filename: file.name, f
                 <span>पूर्णांक: <strong>{parsedData.questions.length * marksPerQuestion} Marks</strong></span>
                 <span>समय: <strong>{durationMinutes} Min</strong></span>
               </div>
+
+              {saveError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                  {saveError}
+                </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <button

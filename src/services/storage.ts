@@ -18,16 +18,6 @@ import {
   TIME_SPEED_DISTANCE_QUESTIONS,
   TIME_SPEED_DISTANCE_RAW_TXT
 } from '../utils/pdfExtractedQuestions';
-import {
-  RRB_ALP_2026_TEST,
-  RRB_ALP_2026_QUESTIONS,
-  RRB_ALP_2026_RAW_TXT
-} from '../utils/rrbExtractedQuestions';
-import {
-  SECTION_MATH_DI_TEST,
-  SECTION_MATH_DI_QUESTIONS,
-  SECTION_MATH_DI_RAW_TXT
-} from '../utils/sectionExtractedQuestions';
 
 const DB_NAME = 'AlphaWayPlatformDB';
 const DB_VERSION = 1;
@@ -563,17 +553,6 @@ class AlphaWayDatabase {
       description: '20 Railway & SSC Math questions extracted directly from PDF with yellow highlight answers',
       questions: TIME_SPEED_DISTANCE_QUESTIONS,
       rawTxt: TIME_SPEED_DISTANCE_RAW_TXT,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    });
-
-    await this.saveTest(RRB_ALP_2026_TEST);
-    await this.saveCollection({
-      id: 'col_rrb_alp_2026',
-      name: 'RRB ALP 2026 CBT 1 (Official Answer Key Collection)',
-      description: '12 official RRB ALP questions extracted with green tick ✅ correct answers',
-      questions: RRB_ALP_2026_QUESTIONS,
-      rawTxt: RRB_ALP_2026_RAW_TXT,
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
