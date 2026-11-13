@@ -49,10 +49,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setBackupMessage('✅ बैकअप सफलतापूर्वक डाउनलोड हो गया!');
+      setBackupMessage('✅ Backup Downloaded Successfully!');
       setTimeout(() => setBackupMessage(null), 4000);
     } catch (e: any) {
-      alert(`बैकअप निर्यात विफल: ${e.message}`);
+      alert(`Backup Export Failed: ${e.message}`);
     }
   };
 
@@ -67,7 +67,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (text) {
         const res = await db.restoreDatabase(text);
         if (res.success) {
-          alert(`✅ ${res.message}\nकुल लोड किए गए: ${res.count?.tests} टेस्ट, ${res.count?.folders} फोल्डर्स।`);
+          alert(`✅ ${res.message}\nTotal Loaded: ${res.count?.tests} टेस्ट, ${res.count?.folders}`);
           onDatabaseRestored();
         } else {
           alert(`❌ ${res.message}`);
@@ -81,7 +81,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleResetConfirm = async () => {
     localStorage.clear();
     indexedDB.deleteDatabase('AlphaWayPlatformDB');
-    alert('डेटाबेस रीसेट हो गया है। पृष्ठ पुनः लोड हो रहा है...');
+    alert('Database Reset. Reloading Page......');
     window.location.reload();
   };
 
@@ -91,10 +91,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs">
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
           <Settings className="text-blue-600 dark:text-blue-400" size={26} />
-          <span>Application Settings (सेटिंग्स एवं अनुकूलन)</span>
+          <span>Application Settings </span>
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          थीम, डिफ़ॉल्ट परीक्षा नियम, ध्वनि, बैकअप एवं रीस्टोर प्रबंधन।
+        Theme, Default Exam Rules, Sound, Backup & Restore
         </p>
       </div>
 
@@ -108,7 +108,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 1. Appearance / Theme */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white">
-          ऐप थीम (App Appearance & Theme)
+          App Appearance & Theme
         </h2>
 
         <div className="grid grid-cols-3 gap-3">
@@ -156,12 +156,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 2. App Language Preference */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <span>{settings.language === 'en' ? 'App UI Language' : 'ऐप भाषा (App Language)'}</span>
+          <span>{settings.language === 'en' ? 'App UI Language' : '(App Language)'}</span>
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {settings.language === 'en'
             ? 'Select interface language for menus, buttons and dashboards (Default: English):'
-            : 'ऐप इंटरफेस, मेन्यू व बटन के लिए भाषा चुनें (डिफ़ॉल्ट: English):'}
+            : 'Choose App Language (Default): English):'}
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -192,7 +192,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           >
             <div className="text-left">
               <div className="font-extrabold text-sm">हिंदी (Hindi)</div>
-              <div className="text-[11px] text-slate-400 font-normal">देवनागरी व संपूर्ण इंटरफेस</div>
+              <div className="text-[11px] text-slate-400 font-normal">Devanagari & Full Interface</div>
             </div>
             {settings.language === 'hi' && <CheckCircle2 className="text-blue-600" size={18} />}
           </button>
@@ -202,12 +202,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 3. Question Language Preference (Questions kis language me dena chahte hai) */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <span>{settings.language === 'en' ? 'Default Question Language' : 'प्रश्नों की भाषा प्राथमिकता (Question Language)'}</span>
+          <span>{settings.language === 'en' ? 'Default Question Language' : 'Question Language'}</span>
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {settings.language === 'en'
             ? 'Choose which language you prefer for test questions. You can also switch between English and Hindi anytime on each question inside the exam:'
-            : 'परीक्षा में प्रश्न किस भाषा में देखना चाहते हैं? (परीक्षा के दौरान भी किसी भी प्रश्न पर तुरंत भाषा बदल सकते हैं):'}
+            : 'Choose Question Language (Change Anytime):'}
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -237,8 +237,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }`}
           >
             <div className="text-left">
-              <div className="font-extrabold text-sm">हिंदी प्रश्न (Hindi)</div>
-              <div className="text-[11px] text-slate-400 font-normal">प्रश्न हिंदी में देखें</div>
+              <div className="font-extrabold text-sm">Hindi</div>
+              <div className="text-[11px] text-slate-400 font-normal">View Questions in Hindi</div>
             </div>
             {settings.questionLanguage === 'hi' && <CheckCircle2 className="text-blue-600" size={18} />}
           </button>
@@ -248,13 +248,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 2. Test Preferences & Audio */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white">
-          डिफ़ॉल्ट परीक्षा नियम (Default Test Rules)
+          Default Test Rules
         </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              डिफ़ॉल्ट समय (Default Duration in Minutes)
+              Default Duration in Minutes
             </label>
             <input
               type="number"
@@ -269,7 +269,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              डिफ़ॉल्ट निगेटिव मार्किंग (Negative Marking)
+              Negative Marking
             </label>
             <select
               value={settings.defaultNegativeMarking}
@@ -294,10 +294,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold text-slate-900 dark:text-white">
-                ध्वनि प्रभाव (Sound Feedback)
+                Sound Feedback
               </div>
               <p className="text-[11px] text-slate-500">
-                विकल्प चुनने और परीक्षा समाप्त होने पर ऑडियो संकेत
+               Audio Feedback for Answers & Exam Completion
               </p>
             </div>
           </div>
@@ -321,9 +321,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* AI provider and API keys for PDF question extraction */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-violet-200 dark:border-violet-900 shadow-xs space-y-4">
-        <h2 className="text-base font-bold text-slate-900 dark:text-white">AI API Settings (PDF व Image प्रश्न इम्पोर्ट)</h2>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">AI API Settings (PDF & Image Import)</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          GitHub Actions से बनी Android APK में Backend Server शामिल नहीं होता। PDF/Image से प्रश्न निकालने के लिए Gemini चुनें और अपनी Gemini API Key सेव करें। Backend URL केवल तभी भरें जब आपने अलग से सर्वर होस्ट किया हो।
+          GitHub Actions Android APK Backend Server Not Inckuded PDF/Image Choose Gemini to generate questions and save your Gemini API Key. Enter a Backend URL only if you host a separate server.
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => onUpdateSettings({ pdfAiProvider: 'gemini' })} className={`rounded-xl border-2 p-3 text-sm font-bold ${ (settings.pdfAiProvider || 'gemini') === 'gemini' ? 'border-violet-600 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}>Gemini API</button>
@@ -332,15 +332,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {(!settings.pdfAiProvider || settings.pdfAiProvider === 'gemini') ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key (वैकल्पिक; APK में build secret इस्तेमाल होगा)</label>
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key (Optional; APK में build secret Use)</label>
               {settings.geminiApiKey?.trim() && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                  ✅ Key सेव है
+                  ✅ Key Saved
                 </span>
               )}
             </div>
             <input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onUpdateSettings({ geminiApiKey: e.target.value })} placeholder="AIza..." autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500" />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Google AI Studio से अपनी Gemini API Key बनाकर यहाँ पेस्ट करें। Backend URL खाली रहने पर APK सीधे इसी Key से Gemini API को कॉल करेगी। API Key को APK में स्थायी रूप से embed नहीं किया जाता।</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Google Paste Gemini API Key. Blank Backend URL = Direct Gemini access. Key isn’t embedded.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -348,7 +348,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">OpenAI API Key</label>
               {settings.openaiApiKey?.trim() && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                  ✅ Key सेव है
+                  ✅ Key Saved
                 </span>
               )}
             </div>
@@ -357,7 +357,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         )}
         <div className="space-y-1.5 pt-1">
-          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Backend Server URL (वैकल्पिक — यदि आपका खुद का Node सर्वर होस्ट है)</label>
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Backend Server URL </label>
           <input
             type="url"
             value={settings.backendServerUrl || ''}
@@ -367,7 +367,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500"
           />
         </div>
-        <p className="text-[11px] text-amber-600 dark:text-amber-400">सुरक्षा: API Key इसी डिवाइस में सेव होगी, लेकिन APK में पूरी तरह सुरक्षित नहीं रहती। अपनी key किसी के साथ साझा न करें।</p>
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">Security: Key is stored on this device. Never share it.</p>
       </div>
 
       {/* 3. Database Backup & Restore */}
@@ -375,12 +375,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="flex items-center gap-2">
           <ShieldCheck className="text-emerald-500" size={20} />
           <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            स्थायी डेटाबेस बैकअप एवं रीस्टोर (Backup & Restore)
+            Backup & Restore
           </h2>
         </div>
 
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          सभी बुक्स, सब-फोल्डर, प्रश्न संकलन, टेस्ट एवं प्रयास इतिहास को JSON फ़ाइल में सुरक्षित करें ताकि फोन बदलने या कैश साफ होने पर भी आपका डेटा सुरक्षित रहे।
+         Backup all books, folders, questions, tests & history to JSON for safe recovery.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
@@ -390,12 +390,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="flex items-center justify-center gap-2 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm transition-colors"
           >
             <Download size={16} />
-            <span>बैकअप डाउनलोड करें (Export JSON)</span>
+            <span>Export JSON</span>
           </button>
 
           <label className="flex items-center justify-center gap-2 p-3.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-bold text-xs sm:text-sm hover:bg-blue-100 cursor-pointer transition-colors">
             <Upload size={16} />
-            <span>बैकअप रीस्टोर करें (Import JSON)</span>
+            <span>Import JSON</span>
             <input
               type="file"
               accept=".json,application/json"
@@ -430,7 +430,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md"
         >
           <Download size={16} />
-          <span>GitHub APK Build ZIP डाउनलोड करें</span>
+          <span>GitHub APK Build ZIP Download</span>
         </button>
       </div>
 
