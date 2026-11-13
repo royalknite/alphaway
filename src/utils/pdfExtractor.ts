@@ -656,7 +656,12 @@ async function callExtractApi(
   onProgress?: (status: string) => void
 ): Promise<RawExtractedQuestion[]> {
   const baseUrl = resolveBackendBaseUrl(backendServerUrl);
-  const trimmedKey = (userApiKey || '').trim().replace(/^["']|["']$/g, '');
+  // Optional Gemini key injected by GitHub Actions during APK build.
+  // VITE_* values are bundled into the APK and can be extracted by users.
+  const buildGeminiKey = provider === 'gemini'
+    ? String(import.meta.env?.VITE_GEMINI_API_KEY || '').trim()
+    : '';
+  const trimmedKey = (userApiKey || buildGeminiKey).trim().replace(/^['\"]|['\"]$/g, '');
   const isNativeWithoutCustomServer = isStandaloneCapacitorApp() && !baseUrl;
   const pageLabel =
     pages.length === 1 ? `पेज ${pages[0].pageNumber}` : `पेज ${pages[0].pageNumber}-${pages[pages.length - 1].pageNumber}`;
@@ -672,7 +677,7 @@ async function callExtractApi(
   // local https://localhost/api/pdf/extract endpoint.
   if (isNativeWithoutCustomServer) {
     throw new PdfExtractionError(
-      'Android APK में PDF निकालने के लिए Settings > AI API Settings में Gemini चुनकर अपनी Gemini API Key सेव करें। GitHub Actions APK में Backend API अपने-आप शामिल नहीं होता।',
+      'Gemini Key उपलब्ध नहीं है। GitHub Repo → Settings → Secrets and variables → Actions में GEMINI_API_KEY Secret जोड़कर APK दोबारा build करें, या Settings में वैकल्पिक Key दें।',
       { needsSettings: true, isStandaloneApk: true }
     );
   }
