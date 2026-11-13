@@ -323,7 +323,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-violet-200 dark:border-violet-900 shadow-xs space-y-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white">AI API Settings (PDF व Image प्रश्न इम्पोर्ट)</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          वेब प्रीव्यू में AI सर्वर अपने आप काम करता है। <strong>GitHub Actions से बने Android APK</strong> में बैकएंड सर्वर नहीं होता — इसलिए फोन ऐप में PDF/Image से प्रश्न निकालने के लिए नीचे अपनी Gemini API Key (या OpenAI API Key / Backend Server URL) दर्ज करें।
+          GitHub Actions से बनी Android APK में Backend Server शामिल नहीं होता। PDF/Image से प्रश्न निकालने के लिए Gemini चुनें और अपनी Gemini API Key सेव करें। Backend URL केवल तभी भरें जब आपने अलग से सर्वर होस्ट किया हो।
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => onUpdateSettings({ pdfAiProvider: 'gemini' })} className={`rounded-xl border-2 p-3 text-sm font-bold ${ (settings.pdfAiProvider || 'gemini') === 'gemini' ? 'border-violet-600 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}>Gemini API</button>
@@ -340,7 +340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )}
             </div>
             <input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onUpdateSettings({ geminiApiKey: e.target.value })} placeholder="AIza..." autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500" />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Google AI Studio (aistudio.google.com/apikey) से अपनी Gemini API Key बनाकर यहाँ पेस्ट करें — सिस्टम पहले आपकी Key इस्तेमाल करेगा और कोटा खत्म होने पर बैकअप मॉडल/की पर स्विच करेगा।</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Google AI Studio से अपनी Gemini API Key बनाकर यहाँ पेस्ट करें। Backend URL खाली रहने पर APK सीधे इसी Key से Gemini API को कॉल करेगी। API Key को APK में स्थायी रूप से embed नहीं किया जाता।</p>
           </div>
         ) : (
           <div className="space-y-2">
