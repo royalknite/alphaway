@@ -321,14 +321,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* AI provider and API keys for PDF question extraction */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-violet-200 dark:border-violet-900 shadow-xs space-y-4">
-        <h2 className="text-base font-bold text-slate-900 dark:text-white">AI API Settings (PDF प्रश्न इम्पोर्ट)</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">PDF से प्रश्न, विकल्प और पीली हाइलाइट वाली सही उत्तर-पट्टी पहचानने के लिए AI चुनें। एक बार में चुना हुआ provider इस्तेमाल होगा।</p>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">AI API Settings (PDF व Image प्रश्न इम्पोर्ट)</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          वेब प्रीव्यू में AI सर्वर अपने आप काम करता है। <strong>GitHub Actions से बने Android APK</strong> में बैकएंड सर्वर नहीं होता — इसलिए फोन ऐप में PDF/Image से प्रश्न निकालने के लिए नीचे अपनी Gemini API Key (या OpenAI API Key / Backend Server URL) दर्ज करें।
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => onUpdateSettings({ pdfAiProvider: 'gemini' })} className={`rounded-xl border-2 p-3 text-sm font-bold ${ (settings.pdfAiProvider || 'gemini') === 'gemini' ? 'border-violet-600 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}>Gemini API</button>
           <button type="button" onClick={() => onUpdateSettings({ pdfAiProvider: 'openai' })} className={`rounded-xl border-2 p-3 text-sm font-bold ${ settings.pdfAiProvider === 'openai' ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}>ChatGPT / OpenAI API</button>
         </div>
-        {(!settings.pdfAiProvider || settings.pdfAiProvider === 'gemini') ? <div className="space-y-2"><label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key</label><input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onUpdateSettings({ geminiApiKey: e.target.value })} placeholder="Gemini API Key" autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500" /></div> : <div className="space-y-2"><label className="text-sm font-semibold text-slate-800 dark:text-slate-200">OpenAI API Key</label><input type="password" value={settings.openaiApiKey || ''} onChange={(e) => onUpdateSettings({ openaiApiKey: e.target.value })} placeholder="sk-..." autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500" /><p className="text-[11px] text-slate-500 dark:text-slate-400">ChatGPT Plus/Free subscription से API access शामिल नहीं होता; OpenAI Platform पर अलग API key और billing setup चाहिए।</p></div>}
-        <p className="text-[11px] text-amber-600 dark:text-amber-400">सुरक्षा: API Key इसी डिवाइस में सेव होगी, लेकिन APK में पूरी तरह सुरक्षित नहीं रहती। API इस्तेमाल करने पर provider के अनुसार शुल्क लग सकता है। अपनी key किसी के साथ साझा न करें।</p>
+        {(!settings.pdfAiProvider || settings.pdfAiProvider === 'gemini') ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key (Android APK व Web दोनों में प्राथमिकता)</label>
+              {settings.geminiApiKey?.trim() && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                  ✅ Key सेव है
+                </span>
+              )}
+            </div>
+            <input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onUpdateSettings({ geminiApiKey: e.target.value })} placeholder="AIza..." autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500" />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Google AI Studio (aistudio.google.com/apikey) से अपनी Gemini API Key बनाकर यहाँ पेस्ट करें — सिस्टम पहले आपकी Key इस्तेमाल करेगा और कोटा खत्म होने पर बैकअप मॉडल/की पर स्विच करेगा।</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">OpenAI API Key</label>
+              {settings.openaiApiKey?.trim() && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                  ✅ Key सेव है
+                </span>
+              )}
+            </div>
+            <input type="password" value={settings.openaiApiKey || ''} onChange={(e) => onUpdateSettings({ openaiApiKey: e.target.value })} placeholder="sk-..." autoComplete="off" className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500" />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">ChatGPT Plus/Free subscription से API access शामिल नहीं होता; OpenAI Platform पर अलग API key और billing setup चाहिए।</p>
+          </div>
+        )}
+        <div className="space-y-1.5 pt-1">
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Backend Server URL (वैकल्पिक — यदि आपका खुद का Node सर्वर होस्ट है)</label>
+          <input
+            type="url"
+            value={settings.backendServerUrl || ''}
+            onChange={(e) => onUpdateSettings({ backendServerUrl: e.target.value })}
+            placeholder="https://your-alphaway-server.onrender.com"
+            autoComplete="off"
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500"
+          />
+        </div>
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">सुरक्षा: API Key इसी डिवाइस में सेव होगी, लेकिन APK में पूरी तरह सुरक्षित नहीं रहती। अपनी key किसी के साथ साझा न करें।</p>
       </div>
 
       {/* 3. Database Backup & Restore */}

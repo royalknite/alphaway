@@ -559,6 +559,7 @@ export function App() {
               preselectedFolderId={preselectedFolderForNewTest}
               onSaveTest={handleSaveTest}
               onCancel={() => setCurrentTab('home')}
+              onOpenSettings={() => setCurrentTab('settings')}
               settings={settings}
             />
           )}

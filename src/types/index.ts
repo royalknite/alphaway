@@ -126,6 +126,7 @@ export interface AppSettings {
   geminiApiKey?: string;
   openaiApiKey?: string;
   pdfAiProvider?: 'gemini' | 'openai';
+  backendServerUrl?: string;
 }
 
 export interface ActiveExamState {

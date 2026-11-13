@@ -44,7 +44,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoSaveIntervalSeconds: 2,
   geminiApiKey: '',
   openaiApiKey: '',
-  pdfAiProvider: 'gemini'
+  pdfAiProvider: 'gemini',
+  backendServerUrl: ''
 };
 
 class AlphaWayDatabase {

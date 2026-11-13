@@ -25,7 +25,7 @@ import {
   SAMPLE_TEST_TXT_RAILWAY,
   SAMPLE_TEST_TXT_SSC_CGL
 } from '../../utils/txtParser';
-import { extractQuestionsFromPdf, extractQuestionsFromImages } from '../../utils/pdfExtractor';
+import { extractQuestionsFromPdf, extractQuestionsFromImages, PdfExtractionError } from '../../utils/pdfExtractor';
 import { QuestionFigure } from '../common/QuestionFigure';
 
 interface CreateTestViewProps {
@@ -33,6 +33,7 @@ interface CreateTestViewProps {
   preselectedFolderId?: string;
   onSaveTest: (test: TestItem, rawTxt: string) => Promise<void>;
   onCancel: () => void;
+  onOpenSettings?: () => void;
   settings: AppSettings;
 }
 
@@ -41,6 +42,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   preselectedFolderId,
   onSaveTest,
   onCancel,
+  onOpenSettings,
   settings
 }) => {
   // Step 1: Input TXT & Parse
@@ -71,6 +73,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   const [pdfStatus, setPdfStatus] = useState('');
   const [pdfFileName, setPdfFileName] = useState('');
   const [pdfError, setPdfError] = useState('');
+  const [pdfErrorNeedsSettings, setPdfErrorNeedsSettings] = useState(false);
   const [saveError, setSaveError] = useState('');
 
   // File Upload Handler (Desktop & Mobile Android)
@@ -105,6 +108,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     if (!file) return;
     setPdfFileName(file.name);
     setPdfError('');
+    setPdfErrorNeedsSettings(false);
     setSaveError('');
     setPdfStatus('PDF चुनी गई है। फ़ाइल पढ़ी जा रही है...');
 
@@ -129,6 +133,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       const result = await extractQuestionsFromPdf(file, {
         provider,
         userApiKey,
+        backendServerUrl: settings.backendServerUrl,
         onProgress: (status) => setPdfStatus(status)
       });
 
@@ -173,6 +178,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       setPdfStatus(successMessage);
     } catch (error: any) {
       const message = error?.message || String(error);
+      setPdfErrorNeedsSettings(Boolean(error instanceof PdfExtractionError && error.needsSettings));
       setPdfError(message);
       setPdfStatus('PDF से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
     } finally {
@@ -196,6 +202,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
     setPdfFileName(imageFiles.length === 1 ? imageFiles[0].name : `${imageFiles.length} Images Selected`);
     setPdfError('');
+    setPdfErrorNeedsSettings(false);
     setSaveError('');
     setPdfStatus(`${imageFiles.length} इमेज लोड हो रही हैं... प्रश्न, चित्र व विकल्प अलग किए जा रहे हैं...`);
 
@@ -207,6 +214,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       const result = await extractQuestionsFromImages(imageFiles, {
         provider,
         userApiKey,
+        backendServerUrl: settings.backendServerUrl,
         onProgress: (status) => setPdfStatus(status)
       });
 
@@ -253,6 +261,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       );
     } catch (error: any) {
       const message = error?.message || String(error);
+      setPdfErrorNeedsSettings(Boolean(error instanceof PdfExtractionError && error.needsSettings));
       setPdfError(message);
       setPdfStatus('इमेज से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
     } finally {
@@ -416,16 +425,30 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                 {pdfFileName && <div className="font-bold break-all">चुनी गई फ़ाइल: {pdfFileName}</div>}
                 {pdfStatus && <div className="flex items-center gap-2">{isSubmitting && <RefreshCw size={14} className="animate-spin shrink-0" />}<span>{pdfStatus}</span></div>}
                 {pdfError && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <div className="font-semibold">Error: {pdfError}</div>
-                    <button
-                      type="button"
-                      onClick={() => window.location.reload()}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
-                    >
-                      <RefreshCw size={12} />
-                      <span>पेज रिफ्रेश करें (Reload Page)</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {pdfErrorNeedsSettings && onOpenSettings && (
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          <Settings size={12} />
+                          <span>Settings खोलें (API Key जोड़ें)</span>
+                        </button>
+                      )}
+                      {!pdfErrorNeedsSettings && (
+                        <button
+                          type="button"
+                          onClick={() => window.location.reload()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          <RefreshCw size={12} />
+                          <span>पेज रिफ्रेश करें (Reload Page)</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
                 {!isSubmitting && pdfStatus && !pdfError && parsedData.questions.length > 0 && <div>निकले हुए प्रश्न: {parsedData.questions.length} — Preview टैब में देखें।</div>}

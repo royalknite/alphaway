@@ -2,6 +2,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Question } from '../types';
 import { normalizeHindiText } from './hindiNormalizer';
+import { EXTRACTION_PROMPT, parseExtractedModelJson } from './extractionPrompt';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
@@ -33,12 +34,24 @@ interface RawExtractedQuestion {
 export interface PdfExtractionOptions {
   provider?: 'gemini' | 'openai';
   userApiKey?: string;
+  backendServerUrl?: string;
   onProgress?: (status: string) => void;
 }
 
 export interface PdfExtractionResult {
   questions: Question[];
   totalPages: number;
+}
+
+export class PdfExtractionError extends Error {
+  needsSettings?: boolean;
+  isStandaloneApk?: boolean;
+  constructor(message: string, opts?: { needsSettings?: boolean; isStandaloneApk?: boolean }) {
+    super(message);
+    this.name = 'PdfExtractionError';
+    this.needsSettings = opts?.needsSettings;
+    this.isStandaloneApk = opts?.isStandaloneApk;
+  }
 }
 
 function isValidBox(box: unknown): box is [number, number, number, number] {
@@ -332,68 +345,357 @@ async function renderPdfPages(
   return renderedPages;
 }
 
-async function diagnoseConnectionError(originalError: unknown): Promise<Error> {
+function isStandaloneCapacitorApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  const cap = (window as any).Capacitor;
+  if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) {
+    return true;
+  }
+  const proto = window.location?.protocol || '';
+  return proto === 'capacitor:' || proto === 'file:';
+}
+
+function normalizeBaseUrl(raw?: string): string {
+  const trimmed = (raw || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function resolveBackendBaseUrl(customServerUrl?: string): string {
+  const custom = normalizeBaseUrl(customServerUrl);
+  if (custom) return custom;
+  const envUrl = normalizeBaseUrl(import.meta.env?.VITE_API_BASE_URL as string | undefined);
+  if (envUrl) return envUrl;
+  return '';
+}
+
+const DIRECT_GEMINI_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    questions: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          number: { type: 'INTEGER' },
+          pageNumber: { type: 'INTEGER' },
+          subject: { type: 'STRING' },
+          text: { type: 'STRING' },
+          options: { type: 'ARRAY', items: { type: 'STRING' } },
+          correctAnswerIndex: { type: 'INTEGER' },
+          explanation: { type: 'STRING' },
+          figureType: {
+            type: 'STRING',
+            enum: [
+              'none',
+              'image',
+              'table',
+              'bar_chart',
+              'pie_chart',
+              'line_chart',
+              'data_interpretation',
+              'math_formula',
+              'geometry',
+              'reasoning_figure'
+            ]
+          },
+          figureBox: { type: 'ARRAY', items: { type: 'INTEGER' } },
+          optionBoxes: {
+            type: 'ARRAY',
+            items: { type: 'ARRAY', items: { type: 'INTEGER' } }
+          },
+          tableData: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING' },
+              headers: { type: 'ARRAY', items: { type: 'STRING' } },
+              rows: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'STRING' } } },
+              footer: { type: 'STRING' }
+            }
+          }
+        },
+        required: ['number', 'pageNumber', 'text', 'options', 'correctAnswerIndex', 'figureType']
+      }
+    }
+  },
+  required: ['questions']
+};
+
+function isQuotaExhaustedMessage(msg: string): boolean {
+  return /free_tier_requests|GenerateRequestsPerDay|limit:\s*20|quota exceeded|exceeded your current quota/i.test(
+    msg
+  );
+}
+
+function formatQuotaError(rawMsg: string): PdfExtractionError {
+  const retryMatch = rawMsg.match(/retry in\s+([0-9]+m[0-9.]*s|[0-9.]+s)/i);
+  const waitHint = retryMatch ? ` (पुनः प्रयास समय: ${retryMatch[1]})` : '';
+  return new PdfExtractionError(
+    `AI की दैनिक मुफ़्त सीमा (Free Tier Quota) पूरी हो गई है${waitHint}। तुरंत जारी रखने के लिए Settings > AI API Settings में दूसरी Gemini API Key या OpenAI API Key डालें।`,
+    { needsSettings: true, isStandaloneApk: isStandaloneCapacitorApp() }
+  );
+}
+
+async function callDirectAiFromClient(
+  pages: RenderedPage[],
+  provider: 'gemini' | 'openai',
+  apiKey: string,
+  onProgress?: (status: string) => void
+): Promise<RawExtractedQuestion[]> {
+  const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '');
+  const pageLabel =
+    pages.length === 1 ? `पेज ${pages[0].pageNumber}` : `पेज ${pages[0].pageNumber}-${pages[pages.length - 1].pageNumber}`;
+  const maxAttempts = 2;
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (provider === 'openai') {
+        const contentParts: any[] = [
+          {
+            type: 'text',
+            text: `${EXTRACTION_PROMPT}\n\nReturn strictly valid JSON: {"questions":[{"number":1,"pageNumber":1,"subject":"","text":"","options":["","","",""],"correctAnswerIndex":-1,"explanation":"","figureType":"none|image|table|bar_chart|pie_chart|line_chart|data_interpretation|math_formula|geometry|reasoning_figure","figureBox":[0,0,0,0],"optionBoxes":[],"tableData":{"title":"","headers":[],"rows":[],"footer":""}}]}`
+          }
+        ];
+
+        for (const page of pages) {
+          const cleanBase64 = page.aiImageBase64.includes(',')
+            ? page.aiImageBase64.split(',')[1]
+            : page.aiImageBase64;
+          contentParts.push({ type: 'text', text: `=== PAGE ${page.pageNumber} ===` });
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${cleanBase64}`,
+              detail: 'high'
+            }
+          });
+        }
+
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cleanKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            messages: [{ role: 'user', content: contentParts }],
+            response_format: { type: 'json_object' },
+            max_tokens: 12000,
+            temperature: 0.1
+          })
+        });
+
+        const payload: any = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = payload?.error?.message || `OpenAI API त्रुटि (${resp.status})`;
+          if (isQuotaExhaustedMessage(msg) || resp.status === 401) {
+            throw formatQuotaError(msg);
+          }
+          if ((resp.status === 429 || resp.status >= 500) && attempt < maxAttempts) {
+            onProgress?.(`${pageLabel} पर OpenAI व्यस्त है, पुनः प्रयास (${attempt}/${maxAttempts})...`);
+            await new Promise((r) => setTimeout(r, attempt * 1500));
+            continue;
+          }
+          throw new Error(msg);
+        }
+
+        const rawText = payload?.choices?.[0]?.message?.content || '';
+        if (!rawText.trim()) throw new Error('OpenAI से खाली जवाब मिला।');
+        return parseExtractedModelJson(rawText).questions;
+      }
+
+      const geminiModels = ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+      let modelError: any = null;
+
+      for (const modelName of geminiModels) {
+        const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [];
+        for (const page of pages) {
+          const cleanBase64 = page.aiImageBase64.includes(',')
+            ? page.aiImageBase64.split(',')[1]
+            : page.aiImageBase64;
+          parts.push({ text: `=== PAGE ${page.pageNumber} ===` });
+          parts.push({
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: cleanBase64
+            }
+          });
+        }
+        parts.push({ text: EXTRACTION_PROMPT });
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: DIRECT_GEMINI_RESPONSE_SCHEMA
+            }
+          })
+        });
+
+        const payload: any = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const errMsg = payload?.error?.message || `Gemini API त्रुटि (${resp.status})`;
+          if (resp.status === 404 || resp.status === 429 || isQuotaExhaustedMessage(errMsg)) {
+            const err = new Error(errMsg) as Error & { status?: number };
+            err.status = resp.status;
+            modelError = err;
+            continue;
+          }
+          const err = new Error(errMsg) as Error & { status?: number };
+          err.status = resp.status;
+          throw err;
+        }
+
+        const rawText =
+          payload?.candidates?.[0]?.content?.parts
+            ?.map((p: any) => p?.text || '')
+            .join('') || '';
+        if (!rawText.trim()) {
+          throw new Error('Gemini से खाली जवाब मिला। कृपया दोबारा प्रयास करें।');
+        }
+        return parseExtractedModelJson(rawText).questions;
+      }
+
+      if (modelError && (modelError.status === 429 || isQuotaExhaustedMessage(String(modelError.message)))) {
+        throw formatQuotaError(String(modelError.message));
+      }
+      throw modelError || new Error('Gemini मॉडल उपलब्ध नहीं है।');
+    } catch (err: any) {
+      if (err instanceof PdfExtractionError) {
+        throw err;
+      }
+      lastError = err;
+      const errMsg = String(err?.message || '');
+      if (isQuotaExhaustedMessage(errMsg)) {
+        throw formatQuotaError(errMsg);
+      }
+      const status = err?.status;
+      const isRetryable =
+        status === 429 ||
+        (typeof status === 'number' && status >= 500) ||
+        /failed to fetch|networkerror|load failed|overloaded|unavailable/i.test(errMsg);
+
+      if (isRetryable && attempt < maxAttempts) {
+        onProgress?.(`${pageLabel} पुनः प्रयास (${attempt}/${maxAttempts})...`);
+        await new Promise((r) => setTimeout(r, attempt * 1500));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError || new Error('AI extraction असफल रहा।');
+}
+
+async function diagnoseConnectionError(
+  originalError: unknown,
+  baseUrl: string,
+  hasUserKey: boolean
+): Promise<Error> {
   const rawMsg = originalError instanceof Error ? originalError.message : String(originalError);
+  if (isStandaloneCapacitorApp() && !baseUrl) {
+    if (!hasUserKey) {
+      return new PdfExtractionError(
+        'यह Android APK बिना बैकएंड सर्वर के चल रहा है। PDF/Image (AI) चलाने के लिए Settings > AI API Settings में अपनी Gemini API Key (या OpenAI API Key / Backend Server URL) दर्ज करें।',
+        { needsSettings: true, isStandaloneApk: true }
+      );
+    }
+    return new Error(
+      `AI सर्वर से इंटरनेट कनेक्शन नहीं हो पाया (${rawMsg})। कृपया मोबाइल डेटा/Wi-Fi और API Key जाँचें।`
+    );
+  }
+
   try {
-    const probe = await fetch('/api/health', {
+    const healthUrl = baseUrl ? `${baseUrl}/api/health` : '/api/health';
+    const probe = await fetch(healthUrl, {
       method: 'GET',
-      credentials: 'include',
+      credentials: baseUrl ? 'omit' : 'include',
       redirect: 'manual'
     });
     if (probe.type === 'opaqueredirect' || probe.status === 302 || probe.status === 401 || probe.status === 403) {
       return new Error(
-        'आपका प्रीव्यू सेशन समाप्त (Expire) हो गया है। कृपया पेज को Reload/Refresh करें और फिर PDF अपलोड करें।'
+        'आपका प्रीव्यू सेशन समाप्त (Expire) हो गया है। कृपया पेज को Reload/Refresh करें और फिर अपलोड करें।'
       );
     }
     const contentType = probe.headers.get('content-type') || '';
     if (!probe.ok || !contentType.includes('application/json')) {
-      return new Error(
-        'बैकएंड PDF सर्वर उपलब्ध नहीं है (यदि आप ऑफ़लाइन या Android APK चला रहे हैं तो PDF AI सर्वर कनेक्शन आवश्यक है)।'
+      return new PdfExtractionError(
+        'बैकएंड PDF सर्वर (/api/pdf/extract) उपलब्ध नहीं है। Android APK में उपयोग के लिए Settings > AI API Settings में अपनी Gemini/OpenAI API Key जोड़ें।',
+        { needsSettings: true, isStandaloneApk: isStandaloneCapacitorApp() }
       );
     }
     return new Error(
-      `PDF प्रोसेसिंग के दौरान कनेक्शन टूट गया (${rawMsg})। कृपया पेज Reload करके दोबारा प्रयास करें।`
+      `प्रोसेसिंग के दौरान कनेक्शन टूट गया (${rawMsg})। कृपया पेज Reload करके दोबारा प्रयास करें।`
     );
   } catch {
     return new Error(
-      `सर्वर से संपर्क नहीं हो पाया (${rawMsg})। कृपया पेज Reload करें और इंटरनेट कनेक्शन जाँचें।`
+      `सर्वर से संपर्क नहीं हो पाया (${rawMsg})। कृपया इंटरनेट कनेक्शन और Backend URL जाँचें।`
     );
   }
 }
 
 async function callExtractApi(
-  page: RenderedPage,
+  pages: RenderedPage[],
   provider: 'gemini' | 'openai',
   userApiKey?: string,
+  backendServerUrl?: string,
   onProgress?: (status: string) => void
 ): Promise<RawExtractedQuestion[]> {
-  const maxAttempts = 3;
+  const baseUrl = resolveBackendBaseUrl(backendServerUrl);
+  const trimmedKey = (userApiKey || '').trim().replace(/^["']|["']$/g, '');
+  const isNativeWithoutCustomServer = isStandaloneCapacitorApp() && !baseUrl;
+  const pageLabel =
+    pages.length === 1 ? `पेज ${pages[0].pageNumber}` : `पेज ${pages[0].pageNumber}-${pages[pages.length - 1].pageNumber}`;
+
+  // Inside standalone Android APK (with no custom remote backend URL), skip hitting local Capacitor https://localhost/api/pdf/extract
+  if (isNativeWithoutCustomServer) {
+    if (trimmedKey) {
+      return callDirectAiFromClient(pages, provider, trimmedKey, onProgress);
+    }
+    throw new PdfExtractionError(
+      'यह Android APK बिना बैकएंड सर्वर के चल रहा है (GitHub APK केवल ऑफ़लाइन फ्रंटएंड होता है)। PDF या Image से प्रश्न निकालने के लिए Settings > AI API Settings में अपनी मुफ़्त Gemini API Key (या OpenAI API Key / Backend Server URL) दर्ज करें।',
+      { needsSettings: true, isStandaloneApk: true }
+    );
+  }
+
+  const endpoint = baseUrl ? `${baseUrl}/api/pdf/extract` : '/api/pdf/extract';
+  const maxAttempts = 2;
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch('/api/pdf/extract', {
+      const response = await fetch(endpoint, {
         method: 'POST',
-        credentials: 'include',
+        credentials: baseUrl ? 'omit' : 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider,
-          userApiKey: userApiKey?.trim() || undefined,
-          pages: [
-            {
-              pageNumber: page.pageNumber,
-              imageBase64: page.aiImageBase64,
-              mimeType: 'image/jpeg'
-            }
-          ]
+          userApiKey: trimmedKey || undefined,
+          pages: pages.map((page) => ({
+            pageNumber: page.pageNumber,
+            imageBase64: page.aiImageBase64,
+            mimeType: 'image/jpeg'
+          }))
         })
       });
 
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
+        // Static build / Capacitor APK without backend server returns 404 or index.html (200 text/html)
         if (response.status === 404 || response.status === 200) {
-          throw new Error(
-            'PDF Extraction API (/api/pdf/extract) उपलब्ध नहीं मिला। कृपया पेज को Reload करें।'
+          if (trimmedKey) {
+            return callDirectAiFromClient(pages, provider, trimmedKey, onProgress);
+          }
+          throw new PdfExtractionError(
+            'PDF Extraction API (/api/pdf/extract) इस डिवाइस/APK बिल्ड में शामिल नहीं है। सीधे फोन पर निकालने के लिए Settings > AI API Settings में जाकर अपनी Gemini API Key (या OpenAI Key / Backend Server URL) दर्ज करें।',
+            { needsSettings: true, isStandaloneApk: true }
           );
         }
         throw new Error(`सर्वर से अमान्य जवाब मिला (HTTP ${response.status})। कृपया दोबारा प्रयास करें।`);
@@ -401,13 +703,16 @@ async function callExtractApi(
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const err = new Error(payload?.error || `PDF extraction error (${response.status})`) as Error & {
-          status?: number;
-        };
+        const msg = payload?.error || `PDF extraction error (${response.status})`;
+        if (payload?.quotaExhausted || isQuotaExhaustedMessage(msg)) {
+          throw formatQuotaError(msg);
+        }
+
+        const err = new Error(msg) as Error & { status?: number };
         err.status = response.status;
         if ((response.status === 429 || response.status >= 500) && attempt < maxAttempts) {
           lastError = err;
-          onProgress?.(`पेज ${page.pageNumber} पर AI व्यस्त है, पुनः प्रयास (${attempt}/${maxAttempts})...`);
+          onProgress?.(`${pageLabel} पर AI व्यस्त है, पुनः प्रयास (${attempt}/${maxAttempts})...`);
           await new Promise((r) => setTimeout(r, attempt * 1500));
           continue;
         }
@@ -416,6 +721,9 @@ async function callExtractApi(
 
       return Array.isArray(payload?.questions) ? payload.questions : [];
     } catch (err: any) {
+      if (err instanceof PdfExtractionError) {
+        throw err;
+      }
       lastError = err;
       const isNetworkErr =
         err instanceof TypeError ||
@@ -423,17 +731,52 @@ async function callExtractApi(
 
       if (isNetworkErr) {
         if (attempt < maxAttempts) {
-          onProgress?.(`पेज ${page.pageNumber} पुनः कनेक्ट हो रहा है (${attempt}/${maxAttempts})...`);
+          onProgress?.(`${pageLabel} पुनः कनेक्ट हो रहा है (${attempt}/${maxAttempts})...`);
           await new Promise((r) => setTimeout(r, attempt * 1200));
           continue;
         }
-        throw await diagnoseConnectionError(err);
+        throw await diagnoseConnectionError(err, baseUrl, Boolean(trimmedKey));
       }
       throw err;
     }
   }
 
   throw lastError || new Error('PDF extraction असफल रहा।');
+}
+
+async function extractBatchWithSplitFallback(
+  batch: RenderedPage[],
+  provider: 'gemini' | 'openai',
+  options: PdfExtractionOptions
+): Promise<RawExtractedQuestion[]> {
+  try {
+    return await callExtractApi(
+      batch,
+      provider,
+      options.userApiKey,
+      options.backendServerUrl,
+      options.onProgress
+    );
+  } catch (err: any) {
+    // If quota/settings error or already single page, propagate immediately
+    if (err instanceof PdfExtractionError || batch.length <= 1) {
+      throw err;
+    }
+    // Otherwise split 2-page batch into 1-by-1 calls in case 2 pages together timed out
+    const combined: RawExtractedQuestion[] = [];
+    for (const single of batch) {
+      options.onProgress?.(`पेज ${single.pageNumber} को अलग से प्रोसेस किया जा रहा है...`);
+      const part = await callExtractApi(
+        [single],
+        provider,
+        options.userApiKey,
+        options.backendServerUrl,
+        options.onProgress
+      );
+      combined.push(...part);
+    }
+    return combined;
+  }
 }
 
 function cleanOptionPrefix(text: string): string {
@@ -575,20 +918,19 @@ export async function extractQuestionsFromPdf(
   const totalPages = renderedPages.length;
 
   try {
-    for (let i = 0; i < totalPages; i++) {
-      const page = renderedPages[i];
+    const batchSize = 2;
+    for (let i = 0; i < totalPages; i += batchSize) {
+      const batch = renderedPages.slice(i, i + batchSize);
+      const rangeLabel =
+        batch.length === 1
+          ? `${batch[0].pageNumber}`
+          : `${batch[0].pageNumber}-${batch[batch.length - 1].pageNumber}`;
       options.onProgress?.(
-        `AI से पेज ${page.pageNumber} / ${totalPages} के प्रश्न निकाले जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
+        `AI से पेज ${rangeLabel} / ${totalPages} के प्रश्न निकाले जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
       );
 
-      const rawQuestions = await callExtractApi(
-        page,
-        provider,
-        options.userApiKey,
-        options.onProgress
-      );
-
-      const processed = postProcessQuestions(rawQuestions, pageCanvasMap, page.pageNumber);
+      const rawQuestions = await extractBatchWithSplitFallback(batch, provider, options);
+      const processed = postProcessQuestions(rawQuestions, pageCanvasMap, batch[0].pageNumber);
       allQuestions.push(...processed);
     }
   } finally {
@@ -679,9 +1021,10 @@ export async function extractQuestionsFromImages(
       );
 
       const rawQuestions = await callExtractApi(
-        page,
+        [page],
         provider,
         options.userApiKey,
+        options.backendServerUrl,
         options.onProgress
       );
 
