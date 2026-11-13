@@ -15,54 +15,54 @@ interface ExtractRequestBody {
   userApiKey?: string;
 }
 
-const EXTRACTION_PROMPT = `TASK: EXACT VERBATIM PDF MCQ EXTRACTION (NOT QUESTION GENERATION).
-Inspect every attached page image carefully from top to bottom. Every page image is preceded by a marker like "=== PAGE N ===".
-Extract EVERY visible multiple-choice question (MCQ) on these pages in exact top-to-bottom source order.
+const EXTRACTION_PROMPT = `TASK: EXACT VERBATIM MCQ EXTRACTION FROM PDF PAGE OR EXAM SCREENSHOT (NOT QUESTION GENERATION).
+Inspect every attached page/screenshot image carefully from top to bottom. Every image is preceded by a marker like "=== PAGE N ===".
+Extract EVERY visible multiple-choice question (MCQ) on these images in exact top-to-bottom source order.
 
 STRICT EXTRACTION RULES:
-1. EXACT TEXT & SYMBOLS:
-   - Copy ONLY questions visibly present on the pages. Never invent, replace, paraphrase, translate, or skip questions.
-   - Preserve exact numbers, units, percentages, ratios, fractions, equations, symbols, and A/B/C/D options.
-   - Preserve exact question numbering as printed (even if numbers repeat across different sections or pages, e.g. Q.49, Q.50 appearing in two sections).
-   - Exclude page headers, website/app watermarks, dates, ads, footers, "Attempted %", or Telegram links.
+1. EXACT TEXT & CLEANUP:
+   - Copy ONLY questions visibly present in the image. Never invent, replace, paraphrase, translate, or skip questions.
+   - Preserve exact numbers, units, percentages, ratios, fractions, equations, and symbols.
+   - Ignore top mobile/exam UI chrome & watermarks: question timer (e.g. "1sec"), mark badges ("+1.0 -0.0"), warning/bookmark icons, page headers, website logos/watermarks, ads, footers, or Telegram links.
+   - Strip option numbering prefixes ("1.", "2.", "3.", "4.", "A)", "B)", "C)", "D)") from extracted option strings so options contain clean choice text only.
+   - CRITICAL: NEVER include the options inside the question "text" field, and NEVER include the question text inside "options". Keep question text and options strictly separated!
 
 2. CLEAN HINDI DEVANAGARI UNICODE:
    - Write natural, properly joined Devanagari Hindi words with all matras (ि, ी, ु, ू, े, ै, ो, ौ, ं, ँ, ्) attached cleanly to their consonants.
-   - NEVER split Hindi words or matras with extra spaces (write "निम्नलिखित" NOT "नि म्नलि खि त", "ज्ञात कीजिए" NOT "ज्ञा त की जि ए", "अनुपात" NOT "अनुपानुपात", "पुस्तक" NOT "पुस् पुतक").
-   - NEVER duplicate syllables.
+   - Preserve exact spaces BETWEEN separate Hindi words (e.g. write "आकृति सन्निहित है" and "अनुमति है", NOT "आकृतिसन्निहित" or "अनुमतिहै") and NEVER split a single Hindi word with extra spaces (write "निम्नलिखित" NOT "नि म्नलि खि त", "त्रिभुजों" NOT "त्रि भु जों").
 
-3. DETECT CORRECT ANSWER ACCURATELY (0-BASED INDEX: A=0, B=1, C=2, D=3, OR -1 IF UNMARKED):
-   - Look closely for a GREEN TICK MARK (✅, ✔, green checkmark icon) next to an option -> that option index is correctAnswerIndex. Ignore RED CROSS (❌) marks!
-   - Look closely for a YELLOW HIGHLIGHT / shaded colored option box -> that highlighted option index is correctAnswerIndex.
-   - Look for explicit answer keys like "Ans: B" or "उत्तर: C" attached to the question.
-   - If NO answer indicator is visible for a question, set correctAnswerIndex to -1. NEVER guess.
+3. DETECT CORRECT ANSWER ACCURATELY (0-BASED INDEX: 0, 1, 2, 3, OR -1 IF UNMARKED):
+   - GREEN TICK MARK (✅, ✔) OR GREEN HIGHLIGHTED OPTION BOX -> that option index is correctAnswerIndex!
+   - IMPORTANT: Mobile exam screenshots often show a RED highlighted card / RED cross (❌) / RED retry icon (↺) for the user's wrong attempt. COMPLETELY IGNORE RED! Only GREEN (✓ / green box) or YELLOW highlight indicates the true correct answer.
+   - Look for explicit answer keys like "Ans: B" or "उत्तर: C" if present.
+   - If NO answer indicator is visible, set correctAnswerIndex to -1. NEVER guess.
 
 4. DETECT TABLES (BOX / ROW / COLUMN - MEAN, MEDIAN, MODE, FREQUENCY DISTRIBUTION):
-   - When a question includes a tabular box/row/column grid (such as वर्ग अंतराल / बारंबारता / Mean / Median / Mode / Data Table):
+   - When a question includes a tabular box/row/column grid:
      * Set "figureType": "table"
-     * Populate "tableData": { "title": "...", "headers": ["col1", "col2", ...], "rows": [["r1c1", "r1c2", ...], ...], "footer": "..." } with exact cell values.
-     * Also provide "figureBox": [ymin, xmin, ymax, xmax] enclosing the table as backup.
+     * Populate "tableData": { "title": "...", "headers": ["col1", "col2", ...], "rows": [["r1c1", "r1c2", ...], ...], "footer": "..." }.
+     * Also provide "figureBox": [ymin, xmin, ymax, xmax] enclosing the table.
 
-5. DETECT ALL FIGURES, CHARTS, DIAGRAMS, IMAGES & VISUAL FORMULAS:
-   - When a question has ANY visual figure — including:
-     * Bar Chart / Multi-Bar Chart ("bar_chart")
-     * Pie Chart ("pie_chart")
-     * Line Graph ("line_chart")
-     * Composite Data Interpretation e.g. Pie + Line/Table ("data_interpretation")
-     * Complex Fraction / Surd / Algebraic Expression Formula Box ("math_formula")
-     * Geometry figure ("geometry")
-     * Reasoning diagram / Mirror / Water / Dice / Paper Cut / Venn / Series / Counting Triangles ("reasoning_figure")
-     * General photo or embedded illustration ("image")
-   - Provide "figureType" matching the visual type AND "figureBox": [ymin, xmin, ymax, xmax] (integers 0 to 1000 normalized to the image of "pageNumber").
-   - IMPORTANT FOR figureBox: The box must completely enclose the entire figure, chart, axis labels, numeric values on bars/slices/points, legend, and figure title — with slight breathing room so nothing is clipped, while excluding unrelated question text/options below it.
-   - SHARED DI / PASSAGE CHARTS: If 2 or more questions on the same page refer to ONE shared chart/graph/pie/table shown above them (e.g. "निर्देश (Q.49-52): निम्नलिखित ग्राफ/पाई-चार्ट का अध्ययन करें..."), attach the SAME "figureType" and "figureBox" (and "tableData" if a table) to EACH of those dependent questions so every question displays the chart/table when taken in the test!
+5. ISOLATE QUESTION DIAGRAM (figureBox) WITH ZERO TEXT LEAKAGE:
+   - When a question has ANY visual diagram/figure — e.g. embedded figure, counting triangles, dice/cube net, mirror/water image prompt, bar/pie/line chart, composite DI, geometry figure, visual math formula, or photo:
+     * Set appropriate "figureType" ("bar_chart", "pie_chart", "line_chart", "data_interpretation", "math_formula", "geometry", "reasoning_figure", or "image").
+     * Provide "figureBox": [ymin, xmin, ymax, xmax] (integers 0 to 1000 relative to the image of "pageNumber").
+     * CRITICAL ZERO-TEXT RULE FOR figureBox:
+       - Start ymin STRICTLY BELOW the last line of the printed question text above the diagram (leave a tiny clean white margin above the top edge of the diagram — NEVER touch or clip any Hindi matras, parentheses, or descenders from the question text above!).
+       - End ymax STRICTLY ABOVE any option boxes/numbers ("1.", "2.", "A)") below the diagram.
+       - Include ONLY the diagram/chart itself (and axis labels/legend/A,B,C,D labels if inside the figure).
+   - If a question has NO diagram/table/chart (text-only question), set "figureType": "none" and omit "figureBox".
+   - SHARED DI CHARTS: If multiple questions on the same page share one DI chart/table above them, attach the same "figureType" and "figureBox" (and "tableData" if a table) to each dependent question.
 
 6. VISUAL OPTION IMAGES (optionBoxes):
-   - ONLY if the options A, B, C, D themselves are pictures/diagrams/shapes (instead of plain text/numbers), set "optionBoxes" as an array of 4 [ymin, xmin, ymax, xmax] boxes in order [A, B, C, D] on "pageNumber".
-   - If options are normal text/numbers, leave "optionBoxes" as [].
+   - When options 1/2/3/4 (or A/B/C/D) themselves contain visual images, mirror/water reflections, shapes, dice, or rotated figures (like non-verbal reasoning options):
+     * Set "optionBoxes" as an array of 4 [ymin, xmin, ymax, xmax] boxes in exact option order [0, 1, 2, 3] on "pageNumber".
+     * TIGHT CROP: Each box in "optionBoxes" must tightly enclose ONLY the graphic/figure inside that option — EXCLUDE the option number ("1.", "2.", "3.", "4.") on the left and EXCLUDE UI icons (expand arrows ↗↙, green ✓, red ✕, red ↺) on the right!
+     * Set "options" to ["Option A", "Option B", "Option C", "Option D"] (or clean short label if text accompanies the option graphic).
+   - If options are normal text/numbers (e.g. "12", "11", "10", "14" or "केवल C"), set "optionBoxes" to [].
 
 7. OUTPUT:
-   - Return valid JSON matching the schema. Keep "pageNumber" accurate to the "=== PAGE N ===" label above the image where the question appears.`;
+   - Return valid JSON matching the schema. Keep "pageNumber" accurate to the "=== PAGE N ===" marker.`;
 
 const boxSchema = {
   type: Type.ARRAY,

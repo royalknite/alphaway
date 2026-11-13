@@ -25,9 +25,8 @@ import {
   SAMPLE_TEST_TXT_RAILWAY,
   SAMPLE_TEST_TXT_SSC_CGL
 } from '../../utils/txtParser';
-import { extractQuestionsFromPdf } from '../../utils/pdfExtractor';
+import { extractQuestionsFromPdf, extractQuestionsFromImages } from '../../utils/pdfExtractor';
 import { QuestionFigure } from '../common/QuestionFigure';
-import { AttachImageQuestionModal } from './AttachImageQuestionModal';
 
 interface CreateTestViewProps {
   folders: TestFolder[];
@@ -73,34 +72,6 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   const [pdfFileName, setPdfFileName] = useState('');
   const [pdfError, setPdfError] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [showFigureBuilder, setShowFigureBuilder] = useState(false);
-
-  const handleAddFigureQuestion = (newQuestion: Question) => {
-    const updatedQuestions = [...parsedData.questions, newQuestion];
-    setParsedData({
-      ...parsedData,
-      questions: updatedQuestions,
-      totalParsed: updatedQuestions.length
-    });
-
-    // Also append representation to raw txt
-    let snippet = `\n\nप्रश्न ${updatedQuestions.length}. ${newQuestion.text}`;
-    if (newQuestion.figureType) {
-      snippet += `\n[figure: ${newQuestion.figureType} ${JSON.stringify(newQuestion.figureData || {})}]`;
-    } else if (newQuestion.imageUrl) {
-      snippet += `\n[img: ${newQuestion.imageUrl}]`;
-    }
-    newQuestion.options.forEach((opt, idx) => {
-      const letter = String.fromCharCode(65 + idx);
-      const tick = idx === newQuestion.correctAnswerIndex ? ' ✅' : '';
-      snippet += `\n${letter}) ${opt}${tick}`;
-    });
-    if (newQuestion.explanation) {
-      snippet += `\nEx: ${newQuestion.explanation}`;
-    }
-    setTxtContent((prev) => prev.trim() + snippet);
-    setActiveTab('preview');
-  };
 
   // File Upload Handler (Desktop & Mobile Android)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,6 +181,86 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     }
   };
 
+  const handleImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const imageFiles = files.filter(
+      (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)
+    );
+    if (!imageFiles.length) {
+      setPdfError('कृपया इमेज या स्क्रीनशॉट फ़ाइल चुनें (PNG, JPG, WEBP)।');
+      e.target.value = '';
+      return;
+    }
+
+    setPdfFileName(imageFiles.length === 1 ? imageFiles[0].name : `${imageFiles.length} Images Selected`);
+    setPdfError('');
+    setSaveError('');
+    setPdfStatus(`${imageFiles.length} इमेज लोड हो रही हैं... प्रश्न, चित्र व विकल्प अलग किए जा रहे हैं...`);
+
+    const provider = settings.pdfAiProvider || 'gemini';
+    const userApiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+
+    setIsSubmitting(true);
+    try {
+      const result = await extractQuestionsFromImages(imageFiles, {
+        provider,
+        userApiKey,
+        onProgress: (status) => setPdfStatus(status)
+      });
+
+      const imported = result.questions;
+      if (!imported.length) {
+        throw new Error('चुनी गई इमेज से कोई MCQ प्रश्न पहचाना नहीं जा सका।');
+      }
+
+      const rawText = imported
+        .map(
+          (q, idx) =>
+            `${idx + 1}. ${q.text}\n${q.options
+              .map((o, j) => `${String.fromCharCode(65 + j)}) ${o}${j === q.correctAnswerIndex ? ' ✅' : ''}`)
+              .join('\n')}${q.explanation ? `\nEx: ${q.explanation}` : ''}`
+        )
+        .join('\n\n');
+
+      setTxtContent(rawText);
+      setParsedData({
+        questions: imported,
+        totalParsed: imported.length,
+        errors: [],
+        rawText
+      });
+
+      const cleanTitle =
+        imageFiles.length === 1
+          ? imageFiles[0].name.replace(/\.[^/.]+$/, '').replace(/__[\w]+/g, '').replace(/[_-]+/g, ' ').trim()
+          : `Image Extracted Test (${imported.length} Questions)`;
+      setTestTitle(cleanTitle || 'Image Extracted Mock Test');
+      setDurationMinutes(Math.max(10, imported.length));
+      setActiveTab('preview');
+
+      const unknownAnswers = imported.filter((q) => q.correctAnswerIndex < 0).length;
+      const figureCount = imported.filter((q) => q.imageUrl || q.figureType || q.optionImages?.some(Boolean)).length;
+      setPdfStatus(
+        `✅ ${imageFiles.length} इमेज से कुल ${imported.length} प्रश्न व उनके विकल्प अलग-अलग निकल गए${
+          figureCount > 0 ? ` (${figureCount} चित्र/विकल्प-चित्र क्रॉप सहित)` : ''
+        }। ${
+          unknownAnswers > 0
+            ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं — Preview में सही विकल्प पर टैप करें।`
+            : 'सभी सही उत्तर (Green Tick ✅ / Green Card) अपने आप चुन लिए गए हैं।'
+        }`
+      );
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      setPdfError(message);
+      setPdfStatus('इमेज से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
+    } finally {
+      setIsSubmitting(false);
+      e.target.value = '';
+    }
+  };
+
   const handleTxtChange = (newTxt: string) => {
     setTxtContent(newTxt);
     const result = parseQuestionsFromTxt(newTxt);
@@ -310,10 +361,10 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
             {/* Top Toolbar: File upload + presets */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-sm shrink-0">
-                <Upload size={16} />
-                <span>Upload TXT (फ़ाइल चुनें)</span>
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <label className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer transition-colors shadow-sm shrink-0">
+                <Upload size={15} />
+                <span>Upload TXT</span>
                 <input
                   type="file"
                   accept=".txt,text/plain"
@@ -321,22 +372,16 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   className="hidden"
                 />
               </label>
-              <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl ${isSubmitting ? 'bg-violet-400' : 'bg-violet-600 hover:bg-violet-700'} text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-sm shrink-0`}>
-                {isSubmitting ? <RefreshCw size={16} className="animate-spin" /> : <FileUp size={16} />}
-                <span>{isSubmitting ? 'PDF प्रोसेस हो रही है...' : 'Upload PDF (AI)'}</span>
+              <label className={`flex items-center gap-2 px-3.5 py-2 rounded-xl ${isSubmitting ? 'bg-violet-400' : 'bg-violet-600 hover:bg-violet-700'} text-white font-bold text-xs cursor-pointer transition-colors shadow-sm shrink-0`}>
+                {isSubmitting ? <RefreshCw size={15} className="animate-spin" /> : <FileUp size={15} />}
+                <span>{isSubmitting ? 'प्रोसेस हो रहा है...' : 'Upload PDF (AI)'}</span>
                 <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} className="hidden" disabled={isSubmitting} />
               </label>
-
-              {/* Add Question with Image / PDF Button */}
-              <button
-                type="button"
-                onClick={() => setShowFigureBuilder(true)}
-                className="px-3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all shrink-0 cursor-pointer"
-                title="Reasoning या Math के चित्र/फोटो वाला प्रश्न टेस्ट में जोड़ें"
-              >
-                <ImageIcon size={14} className="text-amber-300" />
-                <span>📷 फोटो/चित्र प्रश्न जोड़ें (Add Image Question)</span>
-              </button>
+              <label className={`flex items-center gap-2 px-3.5 py-2 rounded-xl ${isSubmitting ? 'bg-emerald-400' : 'bg-emerald-600 hover:bg-emerald-700'} text-white font-bold text-xs cursor-pointer transition-colors shadow-sm shrink-0`}>
+                {isSubmitting ? <RefreshCw size={15} className="animate-spin" /> : <ImageIcon size={15} />}
+                <span>Upload Image(s) (AI)</span>
+                <input type="file" accept="image/*" multiple onChange={handleImagesUpload} className="hidden" disabled={isSubmitting} />
+              </label>
 
               {/* Presets */}
               <div className="flex items-center gap-1.5 overflow-x-auto text-xs pb-1">
@@ -368,7 +413,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
             {(pdfFileName || pdfStatus || pdfError) && (
               <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${pdfError ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200'}`}>
-                {pdfFileName && <div className="font-bold break-all">चुनी गई PDF: {pdfFileName}</div>}
+                {pdfFileName && <div className="font-bold break-all">चुनी गई फ़ाइल: {pdfFileName}</div>}
                 {pdfStatus && <div className="flex items-center gap-2">{isSubmitting && <RefreshCw size={14} className="animate-spin shrink-0" />}<span>{pdfStatus}</span></div>}
                 {pdfError && (
                   <div className="space-y-1.5">
@@ -964,19 +1009,6 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Attach Image / PDF Diagram Question Modal */}
-      {showFigureBuilder && (
-        <AttachImageQuestionModal
-          isOpen={showFigureBuilder}
-          onClose={() => setShowFigureBuilder(false)}
-          onInsertQuestion={(newQ: Question) => {
-            handleAddFigureQuestion(newQ);
-            setShowFigureBuilder(false);
-          }}
-          nextQuestionNumber={parsedData.questions.length + 1}
-        />
-      )}
     </div>
   );
 };

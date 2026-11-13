@@ -2,48 +2,129 @@ import React, { useState, useRef } from 'react';
 import {
   X,
   Upload,
-  CheckCircle2,
-  HelpCircle,
-  Eye,
-  Plus,
   Trash2,
-  FileText,
   Image as ImageIcon,
   Check,
-  Maximize2
+  Maximize2,
+  Sparkles,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
-import { Question } from '../../types';
+import { AppSettings, Question } from '../../types';
+import { extractQuestionsFromImages, extractQuestionsFromPdf } from '../../utils/pdfExtractor';
+import { QuestionFigure } from '../common/QuestionFigure';
 
 interface AttachImageQuestionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onInsertQuestion: (question: Question) => void;
+  onInsertMultipleQuestions?: (questions: Question[]) => void;
   nextQuestionNumber: number;
+  settings?: AppSettings;
 }
 
 export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> = ({
   isOpen,
   onClose,
   onInsertQuestion,
-  nextQuestionNumber
+  onInsertMultipleQuestions,
+  nextQuestionNumber,
+  settings
 }) => {
-  const [questionText, setQuestionText] = useState('दी गई आकृति का ध्यानपूर्वक अध्ययन कर सही विकल्प चुनें:');
+  const [questionText, setQuestionText] = useState('');
   const [questionImage, setQuestionImage] = useState<string>('');
-  const [options, setOptions] = useState<string[]>(['विकल्प A', 'विकल्प B', 'विकल्प C', 'विकल्प D']);
+  const [extractedFigureType, setExtractedFigureType] = useState<Question['figureType'] | undefined>(undefined);
+  const [extractedFigureData, setExtractedFigureData] = useState<any>(undefined);
+  const [options, setOptions] = useState<string[]>(['', '', '', '']);
   const [optionImages, setOptionImages] = useState<(string | null)[]>([null, null, null, null]);
   const [correctIndex, setCorrectIndex] = useState<number>(0);
   const [explanation, setExplanation] = useState('');
   const [subject, setSubject] = useState('Reasoning');
   const [isZoomed, setIsZoomed] = useState(false);
-  const [previewOptionZoom, setPreviewOptionZoom] = useState<string | null>(null);
+
+  const [autoExtractAi, setAutoExtractAi] = useState(true);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractStatus, setExtractStatus] = useState('');
+  const [extractError, setExtractError] = useState('');
+  const [lastFile, setLastFile] = useState<File | null>(null);
+  const [multiExtracted, setMultiExtracted] = useState<Question[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  // Handle Question Image Upload (File / Drag & Drop / PDF)
-  const handleImageFileChange = (file: File) => {
+  const applyExtractedQuestion = (q: Question) => {
+    setQuestionText(q.text || '');
+    setQuestionImage(q.imageUrl || '');
+    setExtractedFigureType(q.figureType);
+    setExtractedFigureData(q.figureData);
+
+    const paddedOpts = [0, 1, 2, 3].map((idx) => q.options?.[idx] || '');
+    setOptions(paddedOpts);
+
+    const paddedOptImgs = [0, 1, 2, 3].map((idx) => q.optionImages?.[idx] || null);
+    setOptionImages(paddedOptImgs);
+
+    setCorrectIndex(q.correctAnswerIndex >= 0 && q.correctAnswerIndex < 4 ? q.correctAnswerIndex : 0);
+    setExplanation(q.explanation || '');
+    if (q.subject) setSubject(q.subject);
+  };
+
+  const runAiExtraction = async (file: File) => {
+    setIsExtracting(true);
+    setExtractError('');
+    setMultiExtracted([]);
+    setExtractStatus('AI इमेज से प्रश्न, चित्र और विकल्प अलग कर रहा है...');
+
+    const provider = settings?.pdfAiProvider || 'gemini';
+    const userApiKey = provider === 'openai' ? settings?.openaiApiKey : settings?.geminiApiKey;
+
+    try {
+      const isPdfFile = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const result = isPdfFile
+        ? await extractQuestionsFromPdf(file, {
+            provider,
+            userApiKey,
+            onProgress: (msg) => setExtractStatus(msg)
+          })
+        : await extractQuestionsFromImages([file], {
+            provider,
+            userApiKey,
+            onProgress: (msg) => setExtractStatus(msg)
+          });
+
+      if (!result.questions.length) {
+        throw new Error('इस इमेज में कोई MCQ प्रश्न पहचाना नहीं जा सका। आप नीचे मैन्युअल रूप से भर सकते हैं।');
+      }
+
+      applyExtractedQuestion(result.questions[0]);
+      if (result.questions.length > 1) {
+        setMultiExtracted(result.questions);
+        setExtractStatus(
+          `✅ ${result.questions.length} प्रश्न अलग-अलग निकाले गए! पहला प्रश्न नीचे दिखाया गया है या आप सभी ${result.questions.length} प्रश्न एक साथ जोड़ सकते हैं।`
+        );
+      } else {
+        const q0 = result.questions[0];
+        const hasCroppedDiagram = Boolean(q0.imageUrl || q0.figureType === 'table');
+        const hasOptionImgs = Boolean(q0.optionImages?.some(Boolean));
+        setExtractStatus(
+          `✅ प्रश्न व चारों विकल्प अलग-अलग हो गए${hasCroppedDiagram ? ' (प्रश्न का चित्र क्रॉप किया गया)' : ''}${hasOptionImgs ? ' (विकल्प चित्र क्रॉप किए गए)' : ''}${q0.correctAnswerIndex >= 0 ? ` — सही उत्तर Option ${String.fromCharCode(65 + q0.correctAnswerIndex)} पहचाना गया` : ''}।`
+        );
+      }
+    } catch (err: any) {
+      setExtractError(err?.message || 'AI इमेज स्कैन में त्रुटि हुई।');
+      setExtractStatus('');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleImageFileChange = async (file: File) => {
     if (!file) return;
+    setLastFile(file);
+    setExtractError('');
+    setExtractStatus('');
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -51,12 +132,14 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
       setQuestionImage(result);
     };
     reader.readAsDataURL(file);
+
+    if (autoExtractAi) {
+      await runAiExtraction(file);
+    }
   };
 
-  // Handle Option Image Upload
   const handleOptionImageChange = (index: number, file: File) => {
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
@@ -67,19 +150,18 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
     reader.readAsDataURL(file);
   };
 
-  // Remove option image
   const removeOptionImage = (index: number) => {
     const updated = [...optionImages];
     updated[index] = null;
     setOptionImages(updated);
   };
 
-  // Submit and Insert into Test
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setExtractError('');
 
-    if (!questionText.trim() && !questionImage) {
-      alert('कृपया प्रश्न या प्रश्न का चित्र (Image) जोड़ें।');
+    if (!questionText.trim() && !questionImage && !extractedFigureType) {
+      setExtractError('कृपया प्रश्न या प्रश्न का चित्र (Image) जोड़ें।');
       return;
     }
 
@@ -91,6 +173,8 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
       correctAnswerIndex: correctIndex,
       explanation: explanation.trim(),
       subject: subject || 'Reasoning',
+      figureType: extractedFigureType,
+      figureData: extractedFigureData,
       imageUrl: questionImage || undefined,
       optionImages: optionImages.some(Boolean) ? optionImages : undefined
     };
@@ -111,13 +195,13 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>चित्र / फोटो वाला प्रश्न जोड़ें</span>
+                <span>चित्र / स्क्रीनशॉट से प्रश्न जोड़ें</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
                   Question #{nextQuestionNumber}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Reasoning, Math या GS के किसी भी प्रश्न का फोटो/स्क्रीनशॉट या PDF अपलोड करें
+                स्क्रीनशॉट अपलोड करें — AI प्रश्न, चित्र, विकल्प व सही उत्तर (✓) अपने आप अलग कर देगा
               </p>
             </div>
           </div>
@@ -132,55 +216,98 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
 
         {/* Modal Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+          {/* Auto-Extract Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-xs">
+            <label className="flex items-center gap-2 font-bold text-violet-900 dark:text-violet-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoExtractAi}
+                onChange={(e) => setAutoExtractAi(e.target.checked)}
+                className="rounded text-violet-600 focus:ring-violet-500"
+              />
+              <Sparkles size={14} className="text-violet-600 dark:text-violet-400" />
+              <span>इमेज अपलोड करते ही प्रश्न, चित्र और विकल्प AI से अलग करें</span>
+            </label>
+
+            {lastFile && !isExtracting && (
+              <button
+                type="button"
+                onClick={() => runAiExtraction(lastFile)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+              >
+                <Sparkles size={12} />
+                <span>AI से दोबारा स्कैन करें</span>
+              </button>
+            )}
+          </div>
+
           {/* 1. Image / Diagram Attachment Section */}
           <div className="p-4 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-800 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <ImageIcon size={16} className="text-purple-600 dark:text-purple-400" />
-                <span>प्रश्न का चित्र / फोटो / स्क्रीनशॉट (Question Diagram)</span>
-                <span className="text-xs text-purple-600 dark:text-purple-400 font-semibold">(अनिवार्य / आवश्यक)</span>
+                <span>प्रश्न का स्क्रीनशॉट / चित्र (Question Screenshot or Diagram)</span>
               </label>
 
               {questionImage && (
                 <button
                   type="button"
-                  onClick={() => setQuestionImage('')}
+                  onClick={() => {
+                    setQuestionImage('');
+                    setExtractedFigureType(undefined);
+                    setExtractedFigureData(undefined);
+                  }}
                   className="text-xs text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 font-semibold"
                 >
                   <Trash2 size={13} />
-                  <span>फोटो हटाएं (Remove)</span>
+                  <span>चित्र हटाएं</span>
                 </button>
               )}
             </div>
 
-            {!questionImage ? (
+            {!questionImage && extractedFigureType !== 'table' ? (
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="py-8 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 transition-colors group"
+                onClick={() => !isExtracting && fileInputRef.current?.click()}
+                className="py-7 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 transition-colors group"
               >
                 <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                  <Upload size={22} />
+                  {isExtracting ? <RefreshCw size={22} className="animate-spin" /> : <Upload size={22} />}
                 </div>
                 <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 text-center">
-                  फोटो या स्क्रीनशॉट चुनें (Browse Image / PDF)
+                  {isExtracting ? 'AI इमेज स्कैन कर रहा है...' : 'स्क्रीनशॉट या फोटो चुनें (Browse Image / PDF)'}
                 </div>
                 <div className="text-[11px] text-slate-400 text-center mt-1">
-                  PNG, JPG, WEBP, GIF या PDF स्क्रीनशॉट (मोबाइल गैलरी या डेस्कटॉप से)
+                  PNG, JPG, WEBP — पूरा प्रश्न स्क्रीनशॉट अपलोड करने पर चित्र व विकल्प अपने आप अलग हो जाएंगे
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*,application/pdf"
+                  disabled={isExtracting}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handleImageFileChange(f);
+                    e.target.value = '';
                   }}
                   className="hidden"
                 />
               </div>
             ) : (
               <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 flex flex-col items-center justify-center group">
-                {isPdf ? (
+                {extractedFigureType === 'table' && extractedFigureData ? (
+                  <QuestionFigure
+                    question={{
+                      id: 'preview',
+                      number: nextQuestionNumber,
+                      text: questionText,
+                      options,
+                      correctAnswerIndex: correctIndex,
+                      explanation,
+                      figureType: extractedFigureType,
+                      figureData: extractedFigureData
+                    }}
+                  />
+                ) : isPdf ? (
                   <div className="w-full h-48 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-lg">
                     <object data={questionImage} type="application/pdf" className="w-full h-full rounded-lg" />
                   </div>
@@ -192,16 +319,19 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
                   />
                 )}
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  {questionImage && !isPdf && (
+                    <button
+                      type="button"
+                      onClick={() => setIsZoomed(true)}
+                      className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white shadow-xs"
+                      title="बड़ा करके देखें (Zoom)"
+                    >
+                      <Maximize2 size={14} />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setIsZoomed(true)}
-                    className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white shadow-xs"
-                    title="बड़ा करके देखें (Zoom)"
-                  >
-                    <Maximize2 size={14} />
-                  </button>
-                  <button
-                    type="button"
+                    disabled={isExtracting}
                     onClick={() => fileInputRef.current?.click()}
                     className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-xs"
                     title="दूसरी फोटो चुनें"
@@ -213,12 +343,52 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
                   ref={fileInputRef}
                   type="file"
                   accept="image/*,application/pdf"
+                  disabled={isExtracting}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handleImageFileChange(f);
+                    e.target.value = '';
                   }}
                   className="hidden"
                 />
+              </div>
+            )}
+
+            {(isExtracting || extractStatus || extractError) && (
+              <div
+                className={`rounded-xl border p-3 text-xs space-y-2 ${
+                  extractError
+                    ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200'
+                }`}
+              >
+                {isExtracting && (
+                  <div className="flex items-center gap-2 font-semibold">
+                    <RefreshCw size={14} className="animate-spin shrink-0" />
+                    <span>{extractStatus || 'AI प्रोसेस हो रहा है...'}</span>
+                  </div>
+                )}
+                {!isExtracting && extractStatus && (
+                  <div className="flex items-center gap-2 font-semibold">
+                    <CheckCircle2 size={14} className="shrink-0" />
+                    <span>{extractStatus}</span>
+                  </div>
+                )}
+                {extractError && (
+                  <div className="flex items-center gap-2 font-semibold">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{extractError}</span>
+                  </div>
+                )}
+                {multiExtracted.length > 1 && onInsertMultipleQuestions && (
+                  <button
+                    type="button"
+                    onClick={() => onInsertMultipleQuestions(multiExtracted)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer"
+                  >
+                    सभी {multiExtracted.length} प्रश्न एक साथ टेस्ट में जोड़ें
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -226,24 +396,24 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
           {/* 2. Question Text */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              प्रश्न का शीर्षक / निर्देश (Question Text):
+              प्रश्न का टेक्स्ट (Question Text):
             </label>
             <textarea
               rows={2}
               value={questionText}
               onChange={(e) => setQuestionText(e.target.value)}
-              placeholder="उदा: दी गई आकृति में लुप्त संख्या ज्ञात करें..."
+              placeholder="उदा: दी गई आकृति में त्रिभुजों की संख्या ज्ञात कीजिए..."
               className="w-full text-xs sm:text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
 
-          {/* 3. Four Options (with Optional Option Images & Radio for Correct Ans) */}
+          {/* 3. Four Options */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                चार विकल्प (4 Options) - सही उत्तर पर टिक लगाएं:
+                चार विकल्प (4 Options) — सही उत्तर चुनें:
               </label>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                 सही उत्तर: <strong>Option {String.fromCharCode(65 + correctIndex)}</strong> ✅
               </span>
             </div>
@@ -284,14 +454,13 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
                           updated[idx] = e.target.value;
                           setOptions(updated);
                         }}
-                        placeholder={`Option ${String.fromCharCode(65 + idx)} text`}
+                        placeholder={`Option ${String.fromCharCode(65 + idx)}`}
                         className="flex-1 text-xs font-semibold bg-transparent border-b border-slate-200 dark:border-slate-700 pb-0.5 focus:outline-none focus:border-purple-500 text-slate-900 dark:text-white"
                       />
 
-                      {/* Option Image Upload Trigger */}
                       <label
                         className="p-1 rounded-md text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer"
-                        title="विकल्प का चित्र जोड़ें (Attach diagram for this option)"
+                        title="विकल्प का चित्र जोड़ें"
                       >
                         <ImageIcon size={15} />
                         <input
@@ -317,7 +486,6 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
                       )}
                     </div>
 
-                    {/* Option Image Thumbnail if attached */}
                     {optImg && (
                       <div className="relative mt-2 p-1 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center">
                         <img
@@ -348,9 +516,9 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
           </div>
 
           {/* 5. Subject / Topic Category */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-slate-600 dark:text-slate-400">विषय (Subject):</span>
-            <div className="flex items-center gap-1.5 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
               {['Reasoning', 'Mathematics', 'General Science', 'Mixed'].map((sub) => (
                 <button
                   key={sub}
@@ -381,11 +549,12 @@ export const AttachImageQuestionModal: React.FC<AttachImageQuestionModalProps> =
 
           <button
             type="button"
+            disabled={isExtracting}
             onClick={handleSubmit}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/20 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/20 transition-all cursor-pointer"
           >
             <Check size={16} />
-            <span>इस प्रश्न को टेस्ट में जोड़ें (Add Question to Test)</span>
+            <span>इस प्रश्न को टेस्ट में जोड़ें (Add Question to Test)</span>
           </button>
         </div>
       </div>

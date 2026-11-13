@@ -49,10 +49,146 @@ function isValidBox(box: unknown): box is [number, number, number, number] {
   return ymin >= 0 && xmin >= 0 && ymax <= 1000 && xmax <= 1000 && ymax - ymin >= 12 && xmax - xmin >= 12;
 }
 
+function cleanCroppedFigureCanvas(cropCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = cropCanvas.getContext('2d');
+  if (!ctx) return cropCanvas;
+
+  const w = cropCanvas.width;
+  const h = cropCanvas.height;
+  if (w < 20 || h < 20) return cropCanvas;
+
+  const imgData = ctx.getImageData(0, 0, w, h).data;
+
+  const analyzeRow = (y: number, threshold = 235) => {
+    let nonWhite = 0;
+    let colorful = 0;
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      const r = imgData[idx];
+      const g = imgData[idx + 1];
+      const b = imgData[idx + 2];
+      if (r < threshold || g < threshold || b < threshold) {
+        nonWhite++;
+        const maxC = Math.max(r, g, b);
+        const minC = Math.min(r, g, b);
+        if (maxC - minC > 35) colorful++;
+      }
+    }
+    return { nonWhite, colorful };
+  };
+
+  let topCut = 0;
+  let bottomCut = h;
+
+  // Guard 1: If stray clipped text/descenders touch the very top edge (y=0..3)
+  // OR a thin dark grayscale text band sits in the top 20% followed by a clean blank horizontal gap,
+  // slice cleanly inside that blank gap so the diagram has zero leaked text.
+  const topScanLimit = Math.min(Math.floor(h * 0.24), 70);
+  const topRows = Array.from({ length: topScanLimit }, (_, y) => analyzeRow(y, 222));
+  const touchesTopEdge =
+    topScanLimit > 4 && (topRows[0].nonWhite > 0 || topRows[1].nonWhite > 0 || topRows[2].nonWhite > 0);
+
+  const findBlankGapAfterBand = (
+    rows: Array<{ nonWhite: number; colorful: number }>,
+    allowUncutThinGrayBand: boolean
+  ): number | null => {
+    let sawInk = false;
+    let inkStart = -1;
+    let totalColorful = 0;
+    let totalInk = 0;
+    let blankRun = 0;
+
+    for (let y = 0; y < rows.length; y++) {
+      const row = rows[y];
+      if (row.nonWhite > 0) {
+        if (!sawInk) inkStart = y;
+        sawInk = true;
+        totalInk += row.nonWhite;
+        totalColorful += row.colorful;
+        blankRun = 0;
+      } else if (sawInk) {
+        blankRun++;
+        if (blankRun >= 4) {
+          const bandHeight = y - blankRun - inkStart + 1;
+          const isDarkGrayBand = totalInk > 0 && totalColorful / totalInk < 0.15;
+          const hasMainDiagramBelow = h - y >= h * 0.55;
+          if (hasMainDiagramBelow && (touchesTopEdge || (allowUncutThinGrayBand && isDarkGrayBand && bandHeight <= 28))) {
+            return y - 1;
+          }
+          return null;
+        }
+      }
+    }
+    return null;
+  };
+
+  const detectedTopCut = findBlankGapAfterBand(topRows, true);
+  if (detectedTopCut !== null && detectedTopCut > 0 && detectedTopCut < h * 0.3) {
+    topCut = detectedTopCut;
+  }
+
+  // Guard 2: Bottom edge stray clipped text guard
+  const bottomScanLimit = Math.min(Math.floor(h * 0.18), 55);
+  const bottomRows = Array.from({ length: bottomScanLimit }, (_, offset) => analyzeRow(h - 1 - offset, 222));
+  const touchesBottomEdge =
+    bottomScanLimit > 4 &&
+    (bottomRows[0].nonWhite > 0 || bottomRows[1].nonWhite > 0 || bottomRows[2].nonWhite > 0);
+  if (touchesBottomEdge) {
+    let sawInk = false;
+    let blankRun = 0;
+    for (let offset = 0; offset < bottomRows.length; offset++) {
+      if (bottomRows[offset].nonWhite > 0) {
+        sawInk = true;
+        blankRun = 0;
+      } else if (sawInk) {
+        blankRun++;
+        if (blankRun >= 4 && h - offset >= h * 0.55) {
+          bottomCut = h - offset;
+          break;
+        }
+      }
+    }
+  }
+
+  // Trim excess outer whitespace inside [topCut, bottomCut) and add neat uniform 8px margin
+  let minY = topCut;
+  while (minY < bottomCut - 1 && analyzeRow(minY).nonWhite === 0) minY++;
+  let maxY = bottomCut - 1;
+  while (maxY > minY && analyzeRow(maxY).nonWhite === 0) maxY--;
+
+  let minX = w - 1;
+  let maxX = 0;
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      if (imgData[idx] < 238 || imgData[idx + 1] < 238 || imgData[idx + 2] < 238) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+  }
+
+  if (maxX <= minX || maxY <= minY) return cropCanvas;
+
+  const pad = 8;
+  const trimmedW = maxX - minX + 1 + pad * 2;
+  const trimmedH = maxY - minY + 1 + pad * 2;
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = trimmedW;
+  outCanvas.height = trimmedH;
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) return cropCanvas;
+
+  outCtx.fillStyle = '#ffffff';
+  outCtx.fillRect(0, 0, trimmedW, trimmedH);
+  outCtx.drawImage(cropCanvas, minX, minY, maxX - minX + 1, maxY - minY + 1, pad, pad, maxX - minX + 1, maxY - minY + 1);
+  return outCanvas;
+}
+
 function cropBoxFromCanvas(
   sourceCanvas: HTMLCanvasElement,
   box: unknown,
-  paddingNorm = 12
+  paddingNorm = 2
 ): string | undefined {
   if (!isValidBox(box)) return undefined;
 
@@ -79,9 +215,14 @@ function cropBoxFromCanvas(
   ctx.fillRect(0, 0, sw, sh);
   ctx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
 
+  const cleanedCanvas = cleanCroppedFigureCanvas(cropCanvas);
   try {
-    return cropCanvas.toDataURL('image/png');
+    return cleanedCanvas.toDataURL('image/png');
   } finally {
+    if (cleanedCanvas !== cropCanvas) {
+      cleanedCanvas.width = 0;
+      cleanedCanvas.height = 0;
+    }
     cropCanvas.width = 0;
     cropCanvas.height = 0;
   }
@@ -295,6 +436,10 @@ async function callExtractApi(
   throw lastError || new Error('PDF extraction असफल रहा।');
 }
 
+function cleanOptionPrefix(text: string): string {
+  return text.replace(/^(?:[A-Da-d]|[1-4])[\.)\]:\-]\s+/, '').trim();
+}
+
 function postProcessQuestions(
   rawQuestions: RawExtractedQuestion[],
   pageCanvasMap: Map<number, HTMLCanvasElement>,
@@ -307,7 +452,7 @@ function postProcessQuestions(
     const text = normalizeHindiText(String(raw.text || '')).trim();
     const rawOptions = Array.isArray(raw.options) ? raw.options : [];
     const options = rawOptions
-      .map((opt) => normalizeHindiText(String(opt ?? '')).trim())
+      .map((opt) => cleanOptionPrefix(normalizeHindiText(String(opt ?? '')).trim()))
       .filter((opt, optIdx) => opt.length > 0 || optIdx < 4);
 
     if (!text && options.length < 2) return;
@@ -352,7 +497,12 @@ function postProcessQuestions(
       };
     } else if (raw.figureType && raw.figureType !== 'none' && canvas) {
       // 2. Crop exact visual figure / chart / diagram / math formula / fallback table directly from crisp PDF page
-      const cropped = cropBoxFromCanvas(canvas, raw.figureBox, 14);
+      const isChart =
+        raw.figureType === 'bar_chart' ||
+        raw.figureType === 'pie_chart' ||
+        raw.figureType === 'line_chart' ||
+        raw.figureType === 'data_interpretation';
+      const cropped = cropBoxFromCanvas(canvas, raw.figureBox, isChart ? 6 : 2);
       if (cropped) {
         imageUrl = cropped;
       } else if (figureType !== 'table') {
@@ -383,7 +533,7 @@ function postProcessQuestions(
     if (canvas && Array.isArray(raw.optionBoxes) && raw.optionBoxes.length >= 2) {
       const croppedOpts = options.map((_, optIdx) => {
         const box = raw.optionBoxes?.[optIdx];
-        return cropBoxFromCanvas(canvas, box, 8) || null;
+        return cropBoxFromCanvas(canvas, box, 2) || null;
       });
       if (croppedOpts.some((img) => Boolean(img))) {
         optionImages = croppedOpts;
@@ -429,6 +579,103 @@ export async function extractQuestionsFromPdf(
       const page = renderedPages[i];
       options.onProgress?.(
         `AI से पेज ${page.pageNumber} / ${totalPages} के प्रश्न निकाले जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
+      );
+
+      const rawQuestions = await callExtractApi(
+        page,
+        provider,
+        options.userApiKey,
+        options.onProgress
+      );
+
+      const processed = postProcessQuestions(rawQuestions, pageCanvasMap, page.pageNumber);
+      allQuestions.push(...processed);
+    }
+  } finally {
+    for (const page of renderedPages) {
+      page.canvas.width = 0;
+      page.canvas.height = 0;
+    }
+  }
+
+  return {
+    questions: allQuestions,
+    totalPages
+  };
+}
+
+async function renderImageFiles(
+  files: File[],
+  onProgress?: (status: string) => void
+): Promise<RenderedPage[]> {
+  const renderedPages: RenderedPage[] = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    onProgress?.(`इमेज लोड हो रही है (${i + 1}/${files.length}): ${file.name}`);
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error(`इमेज "${file.name}" पढ़ी नहीं जा सकी।`));
+        image.src = objectUrl;
+      });
+
+      const srcW = img.naturalWidth || img.width || 1000;
+      const srcH = img.naturalHeight || img.height || 1000;
+      const maxDim = Math.max(srcW, srcH);
+      const scale = maxDim > 1800 ? 1800 / maxDim : 1;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(srcW * scale));
+      canvas.height = Math.max(1, Math.round(srcH * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Canvas context उपलब्ध नहीं है।');
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const aiImageBase64 = createCompactAiImage(canvas);
+      renderedPages.push({
+        pageNumber: i + 1,
+        canvas,
+        aiImageBase64
+      });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  return renderedPages;
+}
+
+export async function extractQuestionsFromImages(
+  files: File[],
+  options: PdfExtractionOptions = {}
+): Promise<PdfExtractionResult> {
+  if (!files.length) {
+    throw new Error('कृपया कम से कम एक इमेज या स्क्रीनशॉट चुनें।');
+  }
+
+  const provider = options.provider === 'openai' ? 'openai' : 'gemini';
+  const renderedPages = await renderImageFiles(files, options.onProgress);
+  const pageCanvasMap = new Map<number, HTMLCanvasElement>(
+    renderedPages.map((p) => [p.pageNumber, p.canvas])
+  );
+
+  const allQuestions: Question[] = [];
+  const totalPages = renderedPages.length;
+
+  try {
+    for (let i = 0; i < totalPages; i++) {
+      const page = renderedPages[i];
+      options.onProgress?.(
+        `AI से इमेज ${page.pageNumber} / ${totalPages} के प्रश्न व विकल्प अलग किए जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
       );
 
       const rawQuestions = await callExtractApi(

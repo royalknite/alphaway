@@ -107,7 +107,6 @@ const SPLIT_WORD_FIXES: [RegExp, string][] = [
   [/मा\s+त्रा/g, 'मात्रा'],
   [/नि\s+ष्पा\s+दन/g, 'निष्पादन'],
   [/प्रवृ\s+त्ति/g, 'प्रवृत्ति'],
-  [/संक्षि\s+प्त/g, 'संक्षिप्त/'],
   [/संक्षि\s+प्त/g, 'संक्षिप्त'],
   [/नि\s+रंतर/g, 'निरंतर'],
   [/एकमा\s+त्र/g, 'एकमात्र'],
@@ -150,10 +149,6 @@ export function normalizeHindiText(text: string): string {
   // 4. Fix split Devanagari matras (e.g., consonant + space + matra)
   // Devanagari vowel signs: 093E-094C, 0962-0963, plus virama 094D, anusvara 0902
   cleaned = cleaned.replace(/([\u0915-\u0939])\s+([\u093E-\u094C\u0902\u094D])/g, '$1$2');
-
-  // Fix short 'i' matra separated from following base: [consonant + 093F] + space + [consonant]
-  // in cases like "नि म्न" or "कि ताब"
-  cleaned = cleaned.replace(/([\u0915-\u0939]\u093F)\s+([\u0915-\u0939])/g, '$1$2');
 
   // Fix halant separated from following consonant: [consonant + 094D] + space + [consonant]
   cleaned = cleaned.replace(/([\u0915-\u0939]\u094D)\s+([\u0915-\u0939])/g, '$1$2');
