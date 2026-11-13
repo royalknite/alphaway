@@ -62,10 +62,10 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
             <History className="text-blue-600 dark:text-blue-400" size={26} />
-            <span>Permanent Test History (स्थायी परीक्षा इतिहास)</span>
+            <span>Permanent Test History </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            प्रत्येक प्रयास अलग से सुरक्षित है। तुलना करें, व्याख्या देखें या CSV निर्यात करें।
+          Each Attempt Is Saved Separately. Compare, Review Explanations, or Export CSV
           </p>
         </div>
 
@@ -88,7 +88,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="टेस्ट या विषय नाम से खोजें..."
+            placeholder="Search by Test or Subject..."
             className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
           />
         </div>
@@ -102,7 +102,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
                 : 'text-slate-600 dark:text-slate-300'
             }`}
           >
-            सभी ({attempts.length})
+            All ({attempts.length})
           </button>
           <button
             onClick={() => setModeFilter('exam')}
@@ -112,7 +112,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
                 : 'text-slate-600 dark:text-slate-300'
             }`}
           >
-            परीक्षा मोड
+            Exam Mode
           </button>
           <button
             onClick={() => setModeFilter('practice')}
@@ -122,7 +122,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
                 : 'text-slate-600 dark:text-slate-300'
             }`}
           >
-            अभ्यास मोड
+            Practice Mode
           </button>
         </div>
       </div>
@@ -130,7 +130,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
       {/* Attempts List */}
       {filteredAttempts.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 border border-slate-200 dark:border-slate-800 text-center text-slate-400">
-          कोई प्रयास इतिहास नहीं मिला।
+        No Attempt History Found
         </div>
       ) : (
         <div className="space-y-4">
@@ -157,10 +157,10 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
                 </h3>
 
                 <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  <span>सही: <strong className="text-emerald-600">{att.result.correctAnswers}</strong></span>
-                  <span>गलत: <strong className="text-rose-600">{att.result.incorrectAnswers}</strong></span>
-                  <span>सटीकता: <strong className="text-blue-600">{att.result.accuracy.toFixed(1)}%</strong></span>
-                  <span>समय: {formatSeconds(att.result.totalTimeSpentSeconds)}</span>
+                  <span>Right: <strong className="text-emerald-600">{att.result.correctAnswers}</strong></span>
+                  <span>Wrong: <strong className="text-rose-600">{att.result.incorrectAnswers}</strong></span>
+                  <span>Accuracy: <strong className="text-blue-600">{att.result.accuracy.toFixed(1)}%</strong></span>
+                  <span>Time: {formatSeconds(att.result.totalTimeSpentSeconds)}</span>
                 </div>
               </div>
 
@@ -175,7 +175,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
                       att.result.isPassed ? 'text-emerald-600' : 'text-rose-600'
                     }`}
                   >
-                    {att.result.isPassed ? 'PASSED (उत्तीर्ण)' : 'FAILED'}
+                    {att.result.isPassed ? 'PASSED ' : 'FAILED'}
                   </span>
                 </div>
 
@@ -220,7 +220,7 @@ export const TestHistoryView: React.FC<TestHistoryViewProps> = ({
       {/* Delete confirmation */}
       <ConfirmModal
         isOpen={!!deleteTarget}
-        title="प्रयास इतिहास हटाएं (Delete Attempt)"
+        title="पDelete Attempt"
         message="क्या आप इस परीक्षा प्रयास रिकॉर्ड को हटाना चाहते हैं?"
         confirmLabel="हाँ, हटाएं"
         isDanger={true}
