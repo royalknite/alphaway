@@ -332,7 +332,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {(!settings.pdfAiProvider || settings.pdfAiProvider === 'gemini') ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key (Android APK व Web दोनों में प्राथमिकता)</label>
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">Gemini API Key (वैकल्पिक; APK में build secret इस्तेमाल होगा)</label>
               {settings.geminiApiKey?.trim() && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                   ✅ Key सेव है
