@@ -164,7 +164,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             {totalFolders}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {rootFolders.length} मुख्य श्रेणियां (Main Categories)
+            {rootFolders.length} (Main Categories)
           </p>
         </div>
 
@@ -185,7 +185,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             {totalTests}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            स्थायी रूप से सुरक्षित (In IndexedDB)
+            Permanently secured (In IndexedDB)
           </p>
         </div>
 
@@ -206,7 +206,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             {totalAttempted}
           </div>
           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-            {attempts.length} कुल प्रयास (Total Attempts)
+            {attempts.length} (Total Attempts)
           </p>
         </div>
 
@@ -227,7 +227,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             {pendingTests}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            हल करने हेतु शेष (Ready to Take)
+            (Ready to Take)
           </p>
         </div>
       </div>
@@ -237,17 +237,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-              Digital Textbook Library (डिजिटल लाइब्रेरी)
+              Digital Textbook Library
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              पुस्तकों की तरह व्यवस्थित फोल्डर एवं अध्यायवार टेस्ट
+              Book-Style Folders & Chapter-Wise Tests
             </p>
           </div>
           <button
             onClick={() => onNavigate('books')}
             className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
           >
-            <span>सभी देखें (View All)</span>
+            <span> (View All)</span>
             <ArrowRight size={16} />
           </button>
         </div>
@@ -284,12 +284,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
                   {childFolders.length > 0
-                    ? `सब-फोल्डर्स: ${childFolders.map(c => c.name).join(', ')}`
-                    : 'सीधे टेस्ट सामग्री'}
+                    ? `All Folders: ${childFolders.map(c => c.name).join(', ')}`
+                    : 'Test Materials'}
                 </p>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
-                  <span>पुस्तक खोलें (Open Book)</span>
+                  <span>(Open Folder)</span>
                   <ChevronRightIcon />
                 </div>
               </div>
@@ -305,14 +305,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Award size={20} className="text-amber-500" />
-              <span>हालिया प्रयास (Recently Attempted)</span>
+              <span>(Recently Attempted)</span>
             </h2>
             {attempts.length > 0 && (
               <button
                 onClick={() => onNavigate('history')}
                 className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
               >
-                पूरा इतिहास ({attempts.length})
+                All History ({attempts.length})
               </button>
             )}
           </div>
@@ -323,16 +323,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <Clock size={20} />
               </div>
               <p className="text-slate-600 dark:text-slate-300 font-semibold text-sm">
-                अभी तक कोई टेस्ट नहीं दिया गया है।
+               No Tests Attempted Yet
               </p>
               <p className="text-xs text-slate-400 mt-1 mb-4">
-                नीचे दिए गए टेस्ट में से कोई भी टेस्ट शुरू करें!
+               Start any test below!
               </p>
               <button
                 onClick={() => onNavigate('tests')}
                 className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs"
               >
-                टेस्ट चुनें (Browse Tests)
+                Choose Test(Browse Tests)
               </button>
             </div>
           ) : (
@@ -379,13 +379,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileCheck2 size={20} className="text-blue-500" />
-              <span>हाल में जोड़े गए टेस्ट (Recently Added)</span>
+              <span> (Recently Added)</span>
             </h2>
             <button
               onClick={() => onNavigate('tests')}
               className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
             >
-              सभी टेस्ट देखें ({tests.length})
+              View All Test ({tests.length})
             </button>
           </div>
 
@@ -404,9 +404,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       {t.title}
                     </h4>
                     <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      <span>{t.questions.length} प्रश्न</span>
+                      <span>{t.questions.length} Questions</span>
                       <span>•</span>
-                      <span>{t.config.durationMinutes} मिनट</span>
+                      <span>{t.config.durationMinutes} Minute</span>
                       <span>•</span>
                       <span>+{t.config.marksPerQuestion}/-{t.config.negativeMarking}</span>
                     </div>
@@ -416,14 +416,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <button
                       onClick={() => onStartTest(t, 'practice')}
                       className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                      title="अभ्यास मोड (Practice with instant explanations)"
+                      title="Practice Mode (Practice with instant explanations)"
                     >
                       Practice
                     </button>
                     <button
                       onClick={() => onStartTest(t, 'exam')}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all"
-                      title="परीक्षा मोड (Real timed competitive exam)"
+                      title="Exam Mode (Real timed competitive exam)"
                     >
                       <Play size={14} />
                       <span>Exam</span>
