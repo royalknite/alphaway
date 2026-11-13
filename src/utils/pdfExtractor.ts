@@ -352,7 +352,14 @@ function isStandaloneCapacitorApp(): boolean {
     return true;
   }
   const proto = window.location?.protocol || '';
-  return proto === 'capacitor:' || proto === 'file:';
+  if (proto === 'capacitor:' || proto === 'file:') return true;
+
+  // Capacitor Android commonly serves the bundled app from https://localhost.
+  // Some Capacitor builds do not expose window.Capacitor globally, so detect
+  // the Android WebView fallback as well.
+  const host = window.location?.hostname || '';
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  return host === 'localhost' && /Android/i.test(userAgent);
 }
 
 function normalizeBaseUrl(raw?: string): string {
@@ -654,13 +661,18 @@ async function callExtractApi(
   const pageLabel =
     pages.length === 1 ? `पेज ${pages[0].pageNumber}` : `पेज ${pages[0].pageNumber}-${pages[pages.length - 1].pageNumber}`;
 
-  // Inside standalone Android APK (with no custom remote backend URL), skip hitting local Capacitor https://localhost/api/pdf/extract
+  // GitHub Actions APK is a static frontend; it does not run server.ts.
+  // When no remote backend URL is configured, use the user's own Gemini key
+  // directly instead of requesting the missing /api/pdf/extract endpoint.
+  if (!baseUrl && trimmedKey) {
+    return callDirectAiFromClient(pages, provider, trimmedKey, onProgress);
+  }
+
+  // A standalone APK without a configured key/backend must never call its
+  // local https://localhost/api/pdf/extract endpoint.
   if (isNativeWithoutCustomServer) {
-    if (trimmedKey) {
-      return callDirectAiFromClient(pages, provider, trimmedKey, onProgress);
-    }
     throw new PdfExtractionError(
-      'यह Android APK बिना बैकएंड सर्वर के चल रहा है (GitHub APK केवल ऑफ़लाइन फ्रंटएंड होता है)। PDF या Image से प्रश्न निकालने के लिए Settings > AI API Settings में अपनी मुफ़्त Gemini API Key (या OpenAI API Key / Backend Server URL) दर्ज करें।',
+      'Android APK में PDF निकालने के लिए Settings > AI API Settings में Gemini चुनकर अपनी Gemini API Key सेव करें। GitHub Actions APK में Backend API अपने-आप शामिल नहीं होता।',
       { needsSettings: true, isStandaloneApk: true }
     );
   }
