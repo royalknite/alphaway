@@ -424,9 +424,9 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
                       <BookOpen size={16} className="text-blue-600" />
                       <span>{t.explanationTitle}</span>
                     </div>
-                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                      {questionDisplay.explanation || 'No explanation available.'}
-                    </p>
+                    <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <MathText>{questionDisplay.explanation || 'No explanation available.'}</MathText>
+                    </div>
                   </div>
                 )}
               </>

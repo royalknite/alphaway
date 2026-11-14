@@ -16,6 +16,7 @@ import {
 import { QuestionCollection, Question, TestItem, TestFolder } from '../../types';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { QuestionFigure } from '../common/QuestionFigure';
+import { MathText } from '../common/MathText';
 
 interface QuestionBankViewProps {
   collections: QuestionCollection[];
@@ -222,7 +223,7 @@ export const QuestionBankView: React.FC<QuestionBankViewProps> = ({
                     </div>
 
                     <div className="text-sm font-bold text-slate-900 dark:text-white leading-relaxed font-hindi">
-                      {q.text}
+                      <MathText>{q.text}</MathText>
                     </div>
 
                     <QuestionFigure question={q} />
@@ -242,7 +243,7 @@ export const QuestionBankView: React.FC<QuestionBankViewProps> = ({
                             <span className="w-5 h-5 rounded-md bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-[10px]">
                               {String.fromCharCode(65 + optIdx)}
                             </span>
-                            <span className="flex-1 font-hindi">{opt}</span>
+                            <span className="flex-1 font-hindi"><MathText>{opt}</MathText></span>
                             {isCorrect && <Check size={14} className="text-emerald-600 shrink-0" />}
                           </div>
                         );
@@ -251,7 +252,7 @@ export const QuestionBankView: React.FC<QuestionBankViewProps> = ({
 
                     {q.explanation && (
                       <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
-                        <strong className="text-blue-600">व्याख्या:</strong> {q.explanation}
+                        <strong className="text-blue-600">व्याख्या:</strong> <MathText>{q.explanation}</MathText>
                       </div>
                     )}
                   </div>

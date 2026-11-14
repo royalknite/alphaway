@@ -801,13 +801,11 @@ function cleanOptionPrefix(text: string): string {
 }
 
 function cleanExtractedMathMarkup(value: string): string {
-  // Never let raw MathML/XML leak into the exam UI. Mathematical figures should be
-  // attached through figureBox as a crisp crop from the original PDF page.
+  // Keep inline LaTeX ($...$), valid <math>...</math>, and math inequalities (e.g. 0° < θ < 90°).
+  // Only strip stray HTML wrapper tags that models occasionally emit.
   return value
-    .replace(/<math\b[\s\S]*?(?:<\/math>|$)/gi, ' [गणितीय सूत्र] ')
-    .replace(/<\/?(?:mrow|mfrac|msqrt|mroot|msup|msub|msubsup|mi|mn|mo|mtext|semantics|annotation)[^>]*>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s{2,}/g, ' ')
+    .replace(/<\/?(?:div|span|p|br|hr|b|i|u|strong|em|font|script|style|table|thead|tbody|tr|td|th)\b[^>]*>/gi, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
 
@@ -842,7 +840,7 @@ function postProcessQuestions(
         : fallbackPageNumber;
     const canvas = pageCanvasMap.get(pageNum);
 
-    const explanation = normalizeHindiText(String(raw.explanation || '')).trim();
+    const explanation = cleanExtractedMathMarkup(normalizeHindiText(String(raw.explanation || '')).trim());
     const subject = normalizeHindiText(String(raw.subject || '')).trim() || undefined;
     const correctAnswerIndex =
       typeof raw.correctAnswerIndex === 'number' &&
@@ -852,8 +850,7 @@ function postProcessQuestions(
         ? raw.correctAnswerIndex
         : -1;
 
-    const containsMathMarkup = /<\/?(?:math|mfrac|msqrt|mroot|msup|msub|mi|mn|mo)\b/i.test(String(raw.text || ''));
-    let figureType = mapFigureType(raw.figureType) || (containsMathMarkup ? 'math_formula' : undefined);
+    let figureType = mapFigureType(raw.figureType);
     let figureData: any = undefined;
     let imageUrl: string | undefined = undefined;
 
@@ -874,8 +871,8 @@ function postProcessQuestions(
         ),
         footer: raw.tableData.footer ? normalizeHindiText(String(raw.tableData.footer)).trim() : undefined
       };
-    } else if ((raw.figureType && raw.figureType !== 'none' || containsMathMarkup) && canvas) {
-      // 2. Crop exact visual figure / chart / diagram / math formula / fallback table directly from crisp PDF page
+    } else if (raw.figureType && raw.figureType !== 'none' && canvas) {
+      // 2. Crop exact visual figure / chart / diagram / fallback table directly from crisp PDF page
       const isChart =
         raw.figureType === 'bar_chart' ||
         raw.figureType === 'pie_chart' ||
@@ -887,6 +884,8 @@ function postProcessQuestions(
       } else if (figureType !== 'table') {
         figureType = undefined;
       }
+    } else if (figureType !== 'table') {
+      figureType = undefined;
     }
 
     // 3. Fallback auto-table detection if inline pipe table survived in text

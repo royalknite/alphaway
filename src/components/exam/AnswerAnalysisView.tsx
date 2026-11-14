@@ -302,9 +302,9 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
                           <BookOpen size={15} />
                           <span>{questionLang === 'en' ? 'Explanation:' : 'व्याख्या / Explanation:'}</span>
                         </div>
-                        <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                          {display.explanation || q.explanation || (questionLang === 'en' ? 'No explanation available.' : 'इस प्रश्न के लिए कोई अतिरिक्त व्याख्या उपलब्ध नहीं है।')}
-                        </p>
+                        <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <MathText>{display.explanation || q.explanation || (questionLang === 'en' ? 'No explanation available.' : 'इस प्रश्न के लिए कोई अतिरिक्त व्याख्या उपलब्ध नहीं है।')}</MathText>
+                        </div>
                       </div>
                     </>
                   );

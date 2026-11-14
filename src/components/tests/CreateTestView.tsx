@@ -27,7 +27,7 @@ import {
 } from '../../utils/txtParser';
 import { extractQuestionsFromPdf, extractQuestionsFromImages, PdfExtractionError } from '../../utils/pdfExtractor';
 import { QuestionFigure } from '../common/QuestionFigure';
-import { MathText } from '../common/MathText';
+import { MathText, hasRichMathContent } from '../common/MathText';
 
 interface CreateTestViewProps {
   folders: TestFolder[];
@@ -571,7 +571,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                         }
                         className="w-full text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
-                      {/<math\b/i.test(q.text) && (
+                      {hasRichMathContent(q.text) && (
                         <div className="rounded-lg border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 p-3 text-sm leading-relaxed overflow-x-auto">
                           <div className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-400 mb-1">Math Preview</div>
                           <MathText>{q.text}</MathText>
@@ -732,6 +732,12 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                                 )}
                               </div>
 
+                              {hasRichMathContent(opt) && (
+                                <div className="mt-1.5 px-2.5 py-1.5 rounded-md bg-indigo-50/60 dark:bg-indigo-950/25 border border-indigo-200/70 dark:border-indigo-900/50 text-sm text-slate-900 dark:text-slate-100 overflow-x-auto">
+                                  <MathText>{opt}</MathText>
+                                </div>
+                              )}
+
                               {/* Option Image Thumbnail if present */}
                               {optImg && (
                                 <div className="mt-1.5 p-1 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 flex items-center justify-center">
@@ -761,6 +767,11 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           placeholder="Enter explanation..."
                           className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
+                        {hasRichMathContent(q.explanation) && (
+                          <div className="mt-1.5 px-2.5 py-1.5 rounded-md bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/50 text-xs text-slate-800 dark:text-slate-200 overflow-x-auto">
+                            <MathText>{q.explanation}</MathText>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))

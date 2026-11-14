@@ -361,15 +361,26 @@ async function translateWithGoogle(text: string, targetLang: 'en' | 'hi'): Promi
   const cached = translationCache.get(cacheKey);
   if (cached) return cached;
 
+  const maskedMath: string[] = [];
+  const protectedText = value.replace(
+    /(<math\b[\s\S]*?<\/math>|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/gi,
+    (match) => {
+      const idx = maskedMath.length;
+      maskedMath.push(match);
+      return `__MATH_TOKEN_${idx}__`;
+    }
+  );
+
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(value)}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(protectedText)}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Translation request failed: ${response.status}`);
     const data = await response.json();
-    const translated = Array.isArray(data?.[0])
+    const rawTranslated = Array.isArray(data?.[0])
       ? data[0].map((part: any) => Array.isArray(part) ? part[0] : '').join('')
       : '';
-    if (!translated.trim()) throw new Error('Empty translation response');
+    if (!rawTranslated.trim()) throw new Error('Empty translation response');
+    const translated = rawTranslated.replace(/__\s*MATH_TOKEN_(\d+)\s*__/gi, (_, i) => maskedMath[Number(i)] ?? '');
     translationCache.set(cacheKey, translated);
     return translated;
   } catch (error) {

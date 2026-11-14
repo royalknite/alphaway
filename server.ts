@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { EXTRACTION_PROMPT, parseExtractedModelJson } from './src/utils/extractionPrompt';
+import { EXTRACTION_PROMPT, parseExtractedModelJson } from './src/utils/extractionPrompt.ts';
 
 interface PageInput {
   pageNumber: number;
