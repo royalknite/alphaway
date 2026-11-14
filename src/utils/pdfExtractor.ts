@@ -963,7 +963,7 @@ export async function extractQuestionsFromPdf(
           ? `${batch[0].pageNumber}`
           : `${batch[0].pageNumber}-${batch[batch.length - 1].pageNumber}`;
       options.onProgress?.(
-        `AI से पेज ${rangeLabel} / ${totalPages} के प्रश्न निकाले जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
+        `AI is extracting ${rangeLabel} / ${totalPages} questions from the page.... (${allQuestions.length} Questions Found)`
       );
 
       const rawQuestions = await extractBatchWithSplitFallback(batch, provider, options);
@@ -991,14 +991,14 @@ async function renderImageFiles(
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    onProgress?.(`इमेज लोड हो रही है (${i + 1}/${files.length}): ${file.name}`);
+    onProgress?.(`Image is Loading (${i + 1}/${files.length}): ${file.name}`);
 
     const objectUrl = URL.createObjectURL(file);
     try {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image();
         image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error(`इमेज "${file.name}" पढ़ी नहीं जा सकी।`));
+        image.onerror = () => reject(new Error(`Image "${file.name}" Not Read`));
         image.src = objectUrl;
       });
 
@@ -1054,7 +1054,7 @@ export async function extractQuestionsFromImages(
     for (let i = 0; i < totalPages; i++) {
       const page = renderedPages[i];
       options.onProgress?.(
-        `AI से इमेज ${page.pageNumber} / ${totalPages} के प्रश्न व विकल्प अलग किए जा रहे हैं... (${allQuestions.length} प्रश्न मिले)`
+        `AI is extracting Image ${page.pageNumber} / ${totalPages} questions and options.... (${allQuestions.length} Questions Found)`
       );
 
       const rawQuestions = await callExtractApi(
