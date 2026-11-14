@@ -1,18 +1,20 @@
 export const EXTRACTION_PROMPT = `TASK: EXACT VERBATIM MCQ EXTRACTION FROM PDF PAGE OR EXAM SCREENSHOT (NOT QUESTION GENERATION).
 Inspect every attached page/screenshot image carefully from top to bottom. Every image is preceded by a marker like "=== PAGE N ===".
-Extract EVERY visible multiple-choice question (MCQ) on these images in exact top-to-bottom source order.
+Extract EVERY visible multiple-choice question (MCQ) on these images in exact top-to-bottom source order. Process each page independently; never combine a question or its options with content from another question or another page.
 
 STRICT EXTRACTION RULES:
 1. EXACT TEXT & CLEANUP:
    - Copy ONLY questions visibly present in the image. Never invent, replace, paraphrase, translate, or skip questions.
    - Preserve exact numbers, units, percentages, ratios, fractions, equations, and symbols.
-   - MATHEMATICAL FORMATTING IS REQUIRED: Never flatten a mathematical fraction to plain text such as "1/2" when it is a numerator over denominator. Encode every mathematical expression as valid MathML inside a <math>...</math> element, keeping it inside the question/option string. Use ONLY simple tags with NO attributes (never write mathvariant=, xmlns=, or other attributes). Use <math><mfrac><mn>1</mn><mn>2</mn></mfrac></math> for 1/2; put the complete numerator in the first child and denominator in the second child.
-   - Use <msqrt>...</msqrt> for square roots and nest <msqrt> elements for roots inside roots. Every opening tag MUST have its matching closing tag; never stop midway through a tag or formula. Keep each complete formula on one continuous string. Example: √(5 + 2√3) must be <math><msqrt><mrow><mn>5</mn><mo>+</mo><mn>2</mn><msqrt><mn>3</mn></msqrt></mrow></msqrt></math>. The radical bar must cover the complete radicand.
-   - Use <msup> for powers and <msub> for subscripts. Use <mfrac> for every stacked fraction, including long algebraic fractions. Use only these simple MathML tags: math, mrow, mi, mn, mo, mtext, mfrac, msqrt, mroot, msup, msub, mfenced. Do not emit HTML/XML attributes. Do not use slash notation for mathematical division.
-   - Keep ordinary prose outside <math> and all math symbols/numbers inside MathML. Do not put Markdown, LaTeX commands, code fences, or explanatory text inside MathML. Use valid MathML tags only.
+   - MATHEMATICS: Do NOT output MathML/XML tags such as <math>, <mfrac>, <msqrt>, <msup>, <mi>, <mn>, or HTML. Do NOT output raw markup as question text or option text.
+   - For any printed mathematical expression (especially stacked fractions, long radical bars, nested roots, powers, trigonometric fractions), set figureType="math_formula" and give a tight figureBox around the COMPLETE printed expression on that page. Keep nearby Hindi instruction text in text. The cropped figure must include the full numerator, denominator, fraction bar, radical vinculum, and all superscripts/subscripts.
+   - If a formula is simple and can be represented faithfully as plain Unicode (e.g. x², √3), it may remain in text/options. Never convert a stacked fraction to ambiguous "a/b" when the source shows a vertical fraction.
    - Ignore top mobile/exam UI chrome & watermarks: question timer (e.g. "1sec"), mark badges ("+1.0 -0.0"), warning/bookmark icons, page headers, website logos/watermarks, ads, footers, or Telegram links.
    - Strip option numbering prefixes ("1.", "2.", "3.", "4.", "A)", "B)", "C)", "D)") from extracted option strings so options contain clean choice text only.
    - CRITICAL: NEVER include the options inside the question "text" field, and NEVER include the question text inside "options". Keep question text and options strictly separated!
+   - For ordinary A-D MCQs, return exactly four option strings in A, B, C, D order. Do not invent E-H, headings, answer labels, question numbers, explanations, or nearby UI text as options.
+   - Each question must contain its own complete stem. Never return a fragment such as only "यदि" when the rest of the stem is visible. Never put a second question's stem into an option.
+   - If the page is dense or text is small, inspect it carefully and extract fewer questions only if the remaining content is genuinely unreadable; never guess or merge neighbouring questions.
 
 2. CLEAN HINDI DEVANAGARI UNICODE:
    - Write natural, properly joined Devanagari Hindi words with all matras (ि, ी, ु, ू, े, ै, ो, ौ, ं, ँ, ्) attached cleanly to their consonants.
@@ -48,7 +50,13 @@ STRICT EXTRACTION RULES:
      * Set "options" to ["Option A", "Option B", "Option C", "Option D"] (or clean short label if text accompanies the option graphic).
    - If options are normal text/numbers (e.g. "12", "11", "10", "14" or "केवल C"), set "optionBoxes" to [].
 
-7. OUTPUT:
+7. FINAL SELF-CHECK BEFORE OUTPUT:
+   - Count the visible question blocks on the page and ensure each is represented once, in order.
+   - For every question, verify the stem is complete, options belong to that stem, and no neighbouring question has been merged.
+   - Verify each A-D option against the image. If an option is not legible, use an empty string rather than copying unrelated text.
+   - Search every text/option value for literal XML/MathML tags; none are allowed.
+
+8. OUTPUT:
    - Return valid JSON matching the schema. Keep "pageNumber" accurate to the "=== PAGE N ===" marker.`;
 
 export function parseExtractedModelJson(raw: string): { questions: any[] } {

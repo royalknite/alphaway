@@ -800,6 +800,17 @@ function cleanOptionPrefix(text: string): string {
   return text.replace(/^(?:[A-Da-d]|[1-4])[\.)\]:\-]\s+/, '').trim();
 }
 
+function cleanExtractedMathMarkup(value: string): string {
+  // Never let raw MathML/XML leak into the exam UI. Mathematical figures should be
+  // attached through figureBox as a crisp crop from the original PDF page.
+  return value
+    .replace(/<math\b[\s\S]*?(?:<\/math>|$)/gi, ' [गणितीय सूत्र] ')
+    .replace(/<\/?(?:mrow|mfrac|msqrt|mroot|msup|msub|msubsup|mi|mn|mo|mtext|semantics|annotation)[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function postProcessQuestions(
   rawQuestions: RawExtractedQuestion[],
   pageCanvasMap: Map<number, HTMLCanvasElement>,
@@ -809,14 +820,21 @@ function postProcessQuestions(
   const questions: Question[] = [];
 
   rawQuestions.forEach((raw, idx) => {
-    const text = normalizeHindiText(String(raw.text || '')).trim();
+    const text = cleanExtractedMathMarkup(normalizeHindiText(String(raw.text || '')).trim());
     const rawOptions = Array.isArray(raw.options) ? raw.options : [];
     const options = rawOptions
-      .map((opt) => cleanOptionPrefix(normalizeHindiText(String(opt ?? '')).trim()))
+      .map((opt) => cleanExtractedMathMarkup(cleanOptionPrefix(normalizeHindiText(String(opt ?? '')).trim())))
       .filter((opt, optIdx) => opt.length > 0 || optIdx < 4);
 
     if (!text && options.length < 2) return;
     if (options.length < 2) return;
+
+    // Reject obvious model merges (a full Hindi question copied into an option).
+    // A bad question is safer to omit than to silently create a corrupted test item.
+    const looksLikeQuestionInOption = options.some((opt) =>
+      opt.length > 90 && /[?？]|निम्नलिखित|किसका|किसकी|किसके|ज्ञात|कीजिए|बताइए/.test(opt)
+    );
+    if (looksLikeQuestionInOption) return;
 
     const pageNum =
       Number.isInteger(raw.pageNumber) && pageCanvasMap.has(Number(raw.pageNumber))
@@ -834,7 +852,8 @@ function postProcessQuestions(
         ? raw.correctAnswerIndex
         : -1;
 
-    let figureType = mapFigureType(raw.figureType);
+    const containsMathMarkup = /<\/?(?:math|mfrac|msqrt|mroot|msup|msub|mi|mn|mo)\b/i.test(String(raw.text || ''));
+    let figureType = mapFigureType(raw.figureType) || (containsMathMarkup ? 'math_formula' : undefined);
     let figureData: any = undefined;
     let imageUrl: string | undefined = undefined;
 
@@ -855,7 +874,7 @@ function postProcessQuestions(
         ),
         footer: raw.tableData.footer ? normalizeHindiText(String(raw.tableData.footer)).trim() : undefined
       };
-    } else if (raw.figureType && raw.figureType !== 'none' && canvas) {
+    } else if ((raw.figureType && raw.figureType !== 'none' || containsMathMarkup) && canvas) {
       // 2. Crop exact visual figure / chart / diagram / math formula / fallback table directly from crisp PDF page
       const isChart =
         raw.figureType === 'bar_chart' ||
@@ -935,7 +954,9 @@ export async function extractQuestionsFromPdf(
   const totalPages = renderedPages.length;
 
   try {
-    const batchSize = 2;
+    // Vision models often merge neighbouring MCQs on dense pages. Process one page per call
+    // so each question and its options stay anchored to a single source page.
+    const batchSize = 1;
     for (let i = 0; i < totalPages; i += batchSize) {
       const batch = renderedPages.slice(i, i + batchSize);
       const rangeLabel =
