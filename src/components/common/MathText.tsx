@@ -1,38 +1,52 @@
 import React from 'react';
 
 /**
- * Renders MathML expressions returned by PDF extraction. MathML is supported by
- * modern Chromium/Android WebView browsers, so fractions and nested radicals
- * remain formatted without a network dependency or a paid math service.
+ * Safely renders MathML embedded in extracted question text.
+ * Handles incomplete MathML returned by OCR/AI by repairing unclosed tags and
+ * dropping incomplete attributes instead of showing raw XML to students.
  */
 const ALLOWED_TAGS = new Set([
   'math', 'mrow', 'mi', 'mn', 'mo', 'mtext', 'mfrac', 'msqrt', 'mroot',
   'msup', 'msub', 'msubsup', 'mover', 'munder', 'munderover', 'mfenced',
   'mtable', 'mtr', 'mtd', 'mspace', 'menclose'
 ]);
-const ALLOWED_ATTRIBUTES = new Set([
-  'xmlns', 'display', 'mathvariant', 'stretchy', 'fence', 'separator',
-  'accent', 'accentunder', 'linethickness', 'displaystyle', 'scriptlevel',
-  'notation', 'width', 'height', 'depth'
-]);
+const VOID_TAGS = new Set(['mspace']);
 
-function sanitizeMathML(source: string): string {
-  return source.replace(/<\/?([a-zA-Z][\w:-]*)([^>]*)>/g, (whole, rawName: string, rawAttrs: string) => {
-    const name = rawName.toLowerCase();
-    if (!ALLOWED_TAGS.has(name)) return '';
-    const closing = /^<\//.test(whole);
-    if (closing) return `</${name}>`;
-    const attrs: string[] = [];
-    rawAttrs.replace(/([\w:-]+)\s*=\s*("[^"]*"|'[^']*')/g, (_: string, key: string, value: string) => {
-      const normalizedKey = key.toLowerCase();
-      if (ALLOWED_ATTRIBUTES.has(normalizedKey)) {
-        const cleanValue = value.slice(1, -1).replace(/[<>]/g, '');
-        attrs.push(`${normalizedKey}="${cleanValue}"`);
+function repairAndSanitizeMathML(source: string): string {
+  // Remove an unfinished final tag/attribute (for example: <mi mathvariant=).
+  const input = source.replace(/<[^>]*$/s, '');
+  const stack: string[] = [];
+  let output = '';
+  const tokenRe = /<\/?([a-zA-Z][\w:-]*)(?:\s+[^<>]*?)?\s*\/?>/g;
+  let match: RegExpExecArray | null;
+  let last = 0;
+
+  while ((match = tokenRe.exec(input))) {
+    output += input.slice(last, match.index);
+    last = tokenRe.lastIndex;
+    const raw = match[0];
+    const name = match[1].toLowerCase();
+    if (!ALLOWED_TAGS.has(name)) continue;
+
+    const closing = /^<\//.test(raw);
+    const selfClosing = /\/>$/.test(raw) || VOID_TAGS.has(name);
+    if (closing) {
+      const stackIndex = stack.lastIndexOf(name);
+      if (stackIndex >= 0) {
+        while (stack.length > stackIndex) output += `</${stack.pop()}>`;
       }
-      return '';
-    });
-    return `<${name}${attrs.length ? ` ${attrs.join(' ')}` : ''}>`;
-  });
+      continue;
+    }
+
+    output += `<${name}>`;
+    if (!selfClosing) stack.push(name);
+  }
+  output += input.slice(last).replace(/<[^>]*$/s, '');
+  while (stack.length) output += `</${stack.pop()}>`;
+
+  // MathML root must be present; wrap bare MathML fragments when needed.
+  if (!/^\s*<math\b/i.test(output)) output = `<math>${output}</math>`;
+  return output;
 }
 
 interface MathTextProps {
@@ -42,20 +56,25 @@ interface MathTextProps {
 
 export const MathText: React.FC<MathTextProps> = ({ children, className = '' }) => {
   const source = String(children ?? '');
-  const parts = source.split(/(<math\b[\s\S]*?<\/math>)/gi);
+  const parts = source.split(/(<math\b[\s\S]*?(?:<\/math>|$))/gi);
+
   return (
     <span className={`math-text ${className}`}>
       {parts.map((part, index) => {
-        if (/^<math\b/i.test(part)) {
-          return (
-            <span
-              key={index}
-              className="math-expression"
-              dangerouslySetInnerHTML={{ __html: sanitizeMathML(part) }}
-            />
-          );
+        if (!/^<math\b/i.test(part)) {
+          // Never expose broken MathML markup as literal question text.
+          const safeText = part.replace(/<\/?(?:math|mrow|mi|mn|mo|mtext|mfrac|msqrt|mroot|msup|msub|msubsup|mover|munder|munderover|mfenced|mtable|mtr|mtd|mspace|menclose)\b[^>]*>?/gi, '');
+          return <React.Fragment key={index}>{safeText}</React.Fragment>;
         }
-        return <React.Fragment key={index}>{part}</React.Fragment>;
+
+        const mathML = repairAndSanitizeMathML(part);
+        return (
+          <span
+            key={index}
+            className="math-expression inline-block align-middle"
+            dangerouslySetInnerHTML={{ __html: mathML }}
+          />
+        );
       })}
     </span>
   );
