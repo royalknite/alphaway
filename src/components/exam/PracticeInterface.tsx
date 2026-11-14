@@ -24,6 +24,7 @@ import { soundManager } from '../../utils/audio';
 import { getTranslation, Language } from '../../utils/translations';
 import { getQuestionDisplay } from '../../utils/bilingualHelper';
 import { QuestionFigure } from '../common/QuestionFigure';
+import { MathText } from '../common/MathText';
 
 interface PracticeInterfaceProps {
   test: TestItem;
@@ -344,7 +345,7 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
               <>
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-xs">
                   <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
-                    {questionDisplay.text}
+                    <MathText>{questionDisplay.text}</MathText>
                   </div>
                 </div>
 
@@ -386,7 +387,7 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
                         </div>
 
                         <div className="flex-1 text-sm sm:text-base font-semibold pt-1">
-                          <div>{optText}</div>
+                          <div><MathText>{optText}</MathText></div>
                           {currentQ.optionImages?.[optIdx] && (
                             <div className="mt-2 p-1 max-w-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center">
                               <img

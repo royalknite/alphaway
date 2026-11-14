@@ -25,6 +25,7 @@ import { soundManager } from '../../utils/audio';
 import { getTranslation, Language } from '../../utils/translations';
 import { getQuestionDisplay, getQuestionDisplayAsync } from '../../utils/bilingualHelper';
 import { QuestionFigure } from '../common/QuestionFigure';
+import { MathText } from '../common/MathText';
 
 interface ExamInterfaceProps {
   test: TestItem;
@@ -614,7 +615,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
             {/* Question Text */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-xs">
               <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 leading-relaxed whitespace-pre-line">
-                {questionDisplay.text}
+                <MathText>{questionDisplay.text}</MathText>
               </div>
               {isTranslatingQuestion && (
                 <div className="mt-3 text-xs font-semibold text-blue-600 dark:text-blue-400" role="status">
@@ -659,7 +660,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
 
                       {/* Option text & optional diagram */}
                       <div className="flex-1 text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-200 pt-1">
-                        <div>{optText}</div>
+                        <div><MathText>{optText}</MathText></div>
                         {currentQ.optionImages?.[optIdx] && (
                           <div className="mt-2 p-1 max-w-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center">
                             <img

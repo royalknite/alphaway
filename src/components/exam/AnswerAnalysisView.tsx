@@ -15,6 +15,7 @@ import { TestAttempt } from '../../types';
 import { printResultReport } from '../../utils/pdfExport';
 import { getQuestionDisplay } from '../../utils/bilingualHelper';
 import { QuestionFigure } from '../common/QuestionFigure';
+import { MathText } from '../common/MathText';
 
 interface AnswerAnalysisViewProps {
   attempt: TestAttempt;
@@ -227,7 +228,7 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
                   return (
                     <>
                       <div className="text-base font-bold text-slate-900 dark:text-white leading-relaxed">
-                        {display.text}
+                        <MathText>{display.text}</MathText>
                       </div>
 
                       {/* Question Figure / Diagram */}
@@ -265,7 +266,7 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
                               </div>
 
                               <div className="flex-1 text-xs sm:text-sm pt-1">
-                                <div>{optText}</div>
+                                <div><MathText>{optText}</MathText></div>
                                 {q.optionImages?.[optIdx] && (
                                   <div className="mt-2 p-1 max-w-xs bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center">
                                     <img
