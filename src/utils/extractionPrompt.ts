@@ -6,6 +6,10 @@ STRICT EXTRACTION RULES:
 1. EXACT TEXT & CLEANUP:
    - Copy ONLY questions visibly present in the image. Never invent, replace, paraphrase, translate, or skip questions.
    - Preserve exact numbers, units, percentages, ratios, fractions, equations, and symbols.
+   - MATHEMATICAL FORMATTING IS REQUIRED: Never flatten a mathematical fraction to plain text such as "1/2" when it is a numerator over denominator. Encode every mathematical expression as valid MathML inside a <math>...</math> element, keeping it inside the question/option string. Use <mfrac><mn>1</mn><mn>2</mn></mfrac> for 1/2; put the complete numerator in the first child and denominator in the second child.
+   - Use <msqrt>...</msqrt> for square roots and nest <msqrt> elements for roots inside roots. Example: √(5 + 2√3) must be <math><msqrt><mrow><mn>5</mn><mo>+</mo><mn>2</mn><msqrt><mn>3</mn></msqrt></mrow></msqrt></math>. The radical bar must cover the complete radicand.
+   - Use <msup> for powers and <msub> for subscripts. Use <mfrac> for every stacked fraction, including long algebraic fractions. Do not use slash notation for mathematical division.
+   - Keep ordinary prose outside <math> and all math symbols/numbers inside MathML. Do not put Markdown, LaTeX commands, code fences, or explanatory text inside MathML. Use valid MathML tags only.
    - Ignore top mobile/exam UI chrome & watermarks: question timer (e.g. "1sec"), mark badges ("+1.0 -0.0"), warning/bookmark icons, page headers, website logos/watermarks, ads, footers, or Telegram links.
    - Strip option numbering prefixes ("1.", "2.", "3.", "4.", "A)", "B)", "C)", "D)") from extracted option strings so options contain clean choice text only.
    - CRITICAL: NEVER include the options inside the question "text" field, and NEVER include the question text inside "options". Keep question text and options strictly separated!
