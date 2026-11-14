@@ -27,6 +27,7 @@ import {
 } from '../../utils/txtParser';
 import { extractQuestionsFromPdf, extractQuestionsFromImages, PdfExtractionError } from '../../utils/pdfExtractor';
 import { QuestionFigure } from '../common/QuestionFigure';
+import { MathText } from '../common/MathText';
 
 interface CreateTestViewProps {
   folders: TestFolder[];
@@ -570,6 +571,12 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                         }
                         className="w-full text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
+                      {/<math\b/i.test(q.text) && (
+                        <div className="rounded-lg border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 p-3 text-sm leading-relaxed overflow-x-auto">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-400 mb-1">Math Preview</div>
+                          <MathText>{q.text}</MathText>
+                        </div>
+                      )}
 
                       {/* Image / Diagram Attachment Bar for this Question */}
                       <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-xs">
