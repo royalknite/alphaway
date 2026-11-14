@@ -51,7 +51,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('preview');
 
   // Test Configurations
-  const [testTitle, setTestTitle] = useState('बिहार दरोगा - नवीन अभ्यास टेस्ट');
+  const [testTitle, setTestTitle] = useState('Bihar Daroga - New Practice Test');
   const [selectedFolderId, setSelectedFolderId] = useState<string>(
     preselectedFolderId || (folders.length > 0 ? folders[0].id : '')
   );
@@ -110,16 +110,16 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     setPdfError('');
     setPdfErrorNeedsSettings(false);
     setSaveError('');
-    setPdfStatus('PDF चुनी गई है। फ़ाइल पढ़ी जा रही है...');
+    setPdfStatus('PDF selected. Reading file...');
 
     if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setPdfError('कृपया PDF फ़ाइल ही चुनें।');
+      setPdfError('Please select a PDF file.');
       setPdfStatus('');
       e.target.value = '';
       return;
     }
     if (file.size > 30 * 1024 * 1024) {
-      setPdfError('PDF 30 MB से बड़ी है। कृपया छोटी PDF चुनें।');
+      setPdfError('PDF exceeds 30 MB. Choose a smaller file.');
       setPdfStatus('');
       e.target.value = '';
       return;
@@ -139,7 +139,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
       const imported = result.questions;
       if (!imported.length) {
-        throw new Error('PDF से कोई MCQ प्रश्न नहीं निकला। कृपया जाँचें कि PDF में पठनीय MCQ प्रश्न हैं या नहीं।');
+        throw new Error('No readable MCQs found in the PDF.');
       }
 
       const rawText = imported
@@ -170,17 +170,17 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
       const unknownAnswers = imported.filter((q) => q.correctAnswerIndex < 0).length;
       const figureCount = imported.filter((q) => q.imageUrl || q.figureType || q.optionImages?.some(Boolean)).length;
-      const successMessage = `✅ ${result.totalPages} पेज से कुल ${imported.length} प्रश्न सफलतापूर्वक निकाले गए${figureCount > 0 ? ` (${figureCount} चित्र/टेबल/चार्ट सहित)` : ''}। ${
+      const successMessage = `✅ ${result.totalPages} pages: ${imported.length} questions extracted${figureCount > 0 ? ` (${figureCount} images/tables/charts included)` : ''}. ${
         unknownAnswers > 0
-          ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं — नीचे Preview में सही विकल्प पर टैप करके चुनें।`
-          : 'सभी सही उत्तर (Green Tick ✅ / Highlight) अपने आप पहचान लिए गए हैं।'
+          ? `${unknownAnswers} answers are unclear. Select the correct option in Preview.`
+          : 'All correct answers (green tick/highlight) detected automatically.'
       }`;
       setPdfStatus(successMessage);
     } catch (error: any) {
       const message = error?.message || String(error);
       setPdfErrorNeedsSettings(Boolean(error instanceof PdfExtractionError && error.needsSettings));
       setPdfError(message);
-      setPdfStatus('PDF से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
+      setPdfStatus('Could not extract questions from PDF. See details below.');
     } finally {
       setIsSubmitting(false);
       e.target.value = '';
@@ -195,7 +195,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)
     );
     if (!imageFiles.length) {
-      setPdfError('कृपया इमेज या स्क्रीनशॉट फ़ाइल चुनें (PNG, JPG, WEBP)।');
+      setPdfError('Select an image or screenshot (PNG, JPG, WEBP).');
       e.target.value = '';
       return;
     }
@@ -204,7 +204,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     setPdfError('');
     setPdfErrorNeedsSettings(false);
     setSaveError('');
-    setPdfStatus(`${imageFiles.length} इमेज लोड हो रही हैं... प्रश्न, चित्र व विकल्प अलग किए जा रहे हैं...`);
+    setPdfStatus(`${imageFiles.length} images loading... Extracting questions, figures, and options...`);
 
     const provider = settings.pdfAiProvider || 'gemini';
     const userApiKey = provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
@@ -220,7 +220,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
       const imported = result.questions;
       if (!imported.length) {
-        throw new Error('चुनी गई इमेज से कोई MCQ प्रश्न पहचाना नहीं जा सका।');
+        throw new Error('No MCQs found in the selected images.');
       }
 
       const rawText = imported
@@ -251,19 +251,19 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
       const unknownAnswers = imported.filter((q) => q.correctAnswerIndex < 0).length;
       const figureCount = imported.filter((q) => q.imageUrl || q.figureType || q.optionImages?.some(Boolean)).length;
       setPdfStatus(
-        `✅ ${imageFiles.length} इमेज से कुल ${imported.length} प्रश्न व उनके विकल्प अलग-अलग निकल गए${
-          figureCount > 0 ? ` (${figureCount} चित्र/विकल्प-चित्र क्रॉप सहित)` : ''
-        }। ${
+        `✅ ${imageFiles.length} images: ${imported.length} questions and options extracted${
+          figureCount > 0 ? ` (${figureCount} cropped figures/options included)` : ''
+        }. ${
           unknownAnswers > 0
-            ? `${unknownAnswers} प्रश्नों के सही उत्तर अस्पष्ट हैं — Preview में सही विकल्प पर टैप करें।`
-            : 'सभी सही उत्तर (Green Tick ✅ / Green Card) अपने आप चुन लिए गए हैं।'
+            ? `${unknownAnswers} answers are unclear. Select the correct option in Preview.`
+            : 'All correct answers (green tick/green card) selected automatically.'
         }`
       );
     } catch (error: any) {
       const message = error?.message || String(error);
       setPdfErrorNeedsSettings(Boolean(error instanceof PdfExtractionError && error.needsSettings));
       setPdfError(message);
-      setPdfStatus('इमेज से प्रश्न नहीं निकल पाए। नीचे विवरण देखें।');
+      setPdfStatus('Could not extract questions from images. See details below.');
     } finally {
       setIsSubmitting(false);
       e.target.value = '';
@@ -305,17 +305,17 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
     setSaveError('');
     const unansweredCount = parsedData.questions.filter((q) => q.correctAnswerIndex < 0).length;
     if (unansweredCount > 0) {
-      setSaveError(`${unansweredCount} प्रश्नों का सही उत्तर अभी चुना नहीं गया है। Preview में हर प्रश्न के सही विकल्प पर टैप करें।`);
+      setSaveError(`${unansweredCount} correct answers are not selected. Choose the correct option for each question in Preview.`);
       setActiveTab('preview');
       return;
     }
     if (parsedData.questions.length === 0) {
-      setSaveError('कृपया कम से कम एक वैध प्रश्न जोड़ें। (Please add at least 1 valid question)');
+      setSaveError('Add at least one valid question. (Please add at least 1 valid question)');
       return;
     }
     const folderToUse = selectedFolderId || (folders.length > 0 ? folders[0].id : '');
     if (!folderToUse) {
-      setSaveError('कृपया टेस्ट सुरक्षित करने के लिए एक बुक फोल्डर चुनें। (Please select a folder)');
+      setSaveError('Select a book folder to save the test. (Please select a folder)');
       return;
     }
 
@@ -361,7 +361,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
           <span>Create Test – TXT Import & Configuration</span>
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          TXT फ़ाइल से तुरंत MCQ प्रश्न आयात करें, पूर्वावलोकन करें और परीक्षा सेटिंग्स कॉन्फ़िगर करें।
+          Import MCQs from TXT, preview them, and configure test settings.
         </p>
       </div>
 
@@ -383,7 +383,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
               </label>
               <label className={`flex items-center gap-2 px-3.5 py-2 rounded-xl ${isSubmitting ? 'bg-violet-400' : 'bg-violet-600 hover:bg-violet-700'} text-white font-bold text-xs cursor-pointer transition-colors shadow-sm shrink-0`}>
                 {isSubmitting ? <RefreshCw size={15} className="animate-spin" /> : <FileUp size={15} />}
-                <span>{isSubmitting ? 'प्रोसेस हो रहा है...' : 'Upload PDF (AI)'}</span>
+                <span>{isSubmitting ? 'Processing...' : 'Upload PDF (AI)'}</span>
                 <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} className="hidden" disabled={isSubmitting} />
               </label>
               <label className={`flex items-center gap-2 px-3.5 py-2 rounded-xl ${isSubmitting ? 'bg-emerald-400' : 'bg-emerald-600 hover:bg-emerald-700'} text-white font-bold text-xs cursor-pointer transition-colors shadow-sm shrink-0`}>
@@ -394,21 +394,21 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
               {/* Presets */}
               <div className="flex items-center gap-1.5 overflow-x-auto text-xs pb-1">
-                <span className="text-slate-400 font-medium shrink-0">नमूना:</span>
+                <span className="text-slate-400 font-medium shrink-0">Samples:</span>
 
                 <button
                   type="button"
                   onClick={() => handleLoadSample(SAMPLE_TEST_TXT_BIHAR_DAROGA, 'Bihar Daroga Mock Test')}
                   className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 whitespace-nowrap font-medium"
                 >
-                  दरोगा
+                  Daroga
                 </button>
                 <button
                   type="button"
                   onClick={() => handleLoadSample(SAMPLE_TEST_TXT_RAILWAY, 'Railway Group D Science Mock')}
                   className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 whitespace-nowrap font-medium"
                 >
-                  रेलवे
+                  Railway
                 </button>
                 <button
                   type="button"
@@ -422,7 +422,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
             {(pdfFileName || pdfStatus || pdfError) && (
               <div className={`rounded-xl border p-3 text-xs space-y-1.5 ${pdfError ? 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200'}`}>
-                {pdfFileName && <div className="font-bold break-all">चुनी गई फ़ाइल: {pdfFileName}</div>}
+                {pdfFileName && <div className="font-bold break-all">Selected file: {pdfFileName}</div>}
                 {pdfStatus && <div className="flex items-center gap-2">{isSubmitting && <RefreshCw size={14} className="animate-spin shrink-0" />}<span>{pdfStatus}</span></div>}
                 {pdfError && (
                   <div className="space-y-2">
@@ -435,7 +435,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
                         >
                           <Settings size={12} />
-                          <span>Settings खोलें (API Key जोड़ें)</span>
+                          <span>Open Settings (Add API Key)</span>
                         </button>
                       )}
                       {!pdfErrorNeedsSettings && (
@@ -445,13 +445,13 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
                         >
                           <RefreshCw size={12} />
-                          <span>पेज रिफ्रेश करें (Reload Page)</span>
+                          <span>Refresh Page</span>
                         </button>
                       )}
                     </div>
                   </div>
                 )}
-                {!isSubmitting && pdfStatus && !pdfError && parsedData.questions.length > 0 && <div>निकले हुए प्रश्न: {parsedData.questions.length} — Preview टैब में देखें।</div>}
+                {!isSubmitting && pdfStatus && !pdfError && parsedData.questions.length > 0 && <div>Extracted questions: {parsedData.questions.length} — See the Preview tab.</div>}
               </div>
             )}
 
@@ -460,14 +460,14 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={16} className="text-emerald-500" />
                 <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {parsedData.totalParsed} प्रश्न निकाले गए (Questions Extracted)
+                  {parsedData.totalParsed} Questions extracted
                 </span>
               </div>
 
               {parsedData.errors.length > 0 && (
                 <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-semibold">
                   <AlertCircle size={15} />
-                  <span>{parsedData.errors.length} चेतावनियां</span>
+                  <span>{parsedData.errors.length} Warnings</span>
                 </div>
               )}
 
@@ -502,11 +502,11 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {parsedData.errors.length > 0 && (
               <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs space-y-1">
                 <div className="font-bold text-rose-700 dark:text-rose-300">
-                  प्रारूप संबंधी समस्याएं (Formatting Issues Detected):
+                  Formatting issues detected:
                 </div>
                 {parsedData.errors.slice(0, 3).map((err, i) => (
                   <div key={i} className="text-rose-600 dark:text-rose-400">
-                    • लाइन {err.line}: {err.message}
+                    • Line {err.line}: {err.message}
                   </div>
                 ))}
               </div>
@@ -517,7 +517,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
               <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
                 {parsedData.questions.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
-                    कोई प्रश्न नहीं मिला। कृपया ऊपर TXT फ़ाइल अपलोड करें या टेक्स्ट लिखें।
+                    No questions found. Upload a TXT file or enter text above.
                   </div>
                 ) : (
                   parsedData.questions.map((q, qIdx) => (
@@ -528,24 +528,24 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-xs px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                            प्रश्न {qIdx + 1}
+                            Q{qIdx + 1}
                           </span>
                           {q.figureType && (
                             <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-semibold text-[11px]">
-                              चित्र: {q.figureType}
+                              Figure: {q.figureType}
                             </span>
                           )}
                           {q.imageUrl && (
                             <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold text-[11px]">
-                              छवि (Image)
+                              Image
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`text-[11px] font-semibold ${q.correctAnswerIndex >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                             {q.correctAnswerIndex >= 0
-                              ? `सही उत्तर: Option ${String.fromCharCode(65 + q.correctAnswerIndex)} ✅`
-                              : 'सही उत्तर: अस्पष्ट (विकल्प चुनें)'}
+                              ? `Correct: Option ${String.fromCharCode(65 + q.correctAnswerIndex)} ✅`
+                              : 'Answer unclear (select an option)'}
                           </span>
                           <button
                             type="button"
@@ -554,7 +554,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                               setParsedData({ ...parsedData, questions: copy, totalParsed: copy.length });
                             }}
                             className="text-slate-400 hover:text-rose-500 text-xs px-1.5 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                            title="प्रश्न हटाएं"
+                            title="Remove question"
                           >
                             ✕
                           </button>
@@ -577,10 +577,10 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-[11px]">
                               <CheckCircle2 size={13} />
-                              चित्र संलग्न है (Image Attached)
+                              Image attached
                             </span>
                             <label className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-semibold text-[11px]">
-                              बदलें (Change)
+                              Change
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
@@ -601,13 +601,13 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                               className="text-rose-500 hover:underline text-[11px] font-semibold flex items-center gap-0.5"
                             >
                               <Trash2 size={12} />
-                              हटाएं
+                              Remove
                             </button>
                           </div>
                         ) : (
                           <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/70 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-semibold text-xs cursor-pointer hover:bg-purple-100 transition-colors">
                             <ImageIcon size={13} />
-                            <span>📷 इस प्रश्न में फोटो/स्क्रीनशॉट जोड़ें (Attach Image)</span>
+                            <span>📷 Attach photo/screenshot to this question</span>
                             <input
                               type="file"
                               accept="image/*,application/pdf"
@@ -624,7 +624,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           </label>
                         )}
                         <span className="text-[11px] text-slate-400">
-                          (Math, Reasoning या Diagram प्रश्न)
+                          (Math, Reasoning, or Diagram question)
                         </span>
                       </div>
 
@@ -657,7 +657,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                                       ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
                                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                                   }`}
-                                  title="इसे सही उत्तर चिह्नित करें"
+                                  title="Mark as correct answer"
                                 >
                                   {String.fromCharCode(65 + optIdx)}
                                 </button>
@@ -675,7 +675,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
                                 {isCorrect && (
                                   <span className="shrink-0 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-600 text-white flex items-center gap-1 shadow-2xs">
-                                    <span>सही</span>
+                                    <span>Correct</span>
                                     <Check size={11} strokeWidth={3} />
                                   </span>
                                 )}
@@ -683,7 +683,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                                 {/* Option Image Trigger */}
                                 <label
                                   className="p-1 rounded text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer"
-                                  title="विकल्प का चित्र जोड़ें"
+                                  title="Add option image"
                                 >
                                   <ImageIcon size={13} />
                                   <input
@@ -714,7 +714,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                                       handleUpdateQuestion(qIdx, { ...q, optionImages: optImgs });
                                     }}
                                     className="text-rose-500 hover:text-rose-700 p-0.5"
-                                    title="विकल्प चित्र हटाएं"
+                                    title="Remove option image"
                                   >
                                     <X size={12} />
                                   </button>
@@ -743,7 +743,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                       {/* Explanation */}
                       <div className="pt-1">
                         <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                          व्याख्या / Explanation:
+                          Explanation:
                         </label>
                         <input
                           type="text"
@@ -751,7 +751,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                           onChange={(e) =>
                             handleUpdateQuestion(qIdx, { ...q, explanation: e.target.value })
                           }
-                          placeholder="Ex: व्याख्या दर्ज करें..."
+                          placeholder="Enter explanation..."
                           className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
@@ -769,10 +769,10 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   value={txtContent}
                   onChange={(e) => handleTxtChange(e.target.value)}
                   className="w-full font-mono text-xs sm:text-sm p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900 text-emerald-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="यहाँ TXT फ़ाइल का प्रारूप चिपकाएं..."
+                  placeholder="Paste TXT format here..."
                 />
                 <p className="text-[11px] text-slate-400">
-                  फॉर्मेट: <code>प्रश्न 1. ... A) ... B) ✅ ... Ex: ...</code>
+                  Format: <code>Q1. ... A) ... B) ✅ ... Ex: ...</code>
                 </p>
               </div>
             )}
@@ -784,20 +784,20 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
               <Settings size={18} className="text-blue-500" />
-              <span>Test Configuration (परीक्षा सेटिंग्स)</span>
+              <span>Test Configuration (Test Settings)</span>
             </h2>
 
             {/* Test Title */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                टेस्ट का शीर्षक (Test Title) *
+                Test Title *
               </label>
               <input
                 type="text"
                 required
                 value={testTitle}
                 onChange={(e) => setTestTitle(e.target.value)}
-                placeholder="उदा: Bihar Police Daroga Mock Test 01"
+                placeholder="e.g. Bihar Police Daroga Mock Test 01"
                 className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -805,7 +805,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {/* Target Book Folder */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                बुक फोल्डर चुनें (Select Book Folder) *
+                Select Book Folder *
               </label>
               <select
                 value={selectedFolderId}
@@ -824,7 +824,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  अवधि (Duration Min)
+                  Duration (Min)
                 </label>
                 <input
                   type="number"
@@ -838,7 +838,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  अंक प्रति प्रश्न (Marks/Q)
+                  Marks per Question
                 </label>
                 <input
                   type="number"
@@ -854,7 +854,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {/* Negative Marking */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                ऋणात्मक अंक (Negative Marking)
+                Negative Marking
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <select
@@ -862,11 +862,11 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onChange={(e) => setNegativeMarkingType(e.target.value)}
                   className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:outline-none"
                 >
-                  <option value="0">कोई नहीं (No Negative)</option>
+                  <option value="0">None</option>
                   <option value="0.25">0.25 (1/4th Marks)</option>
                   <option value="0.33">0.33 (1/3rd Marks)</option>
                   <option value="0.50">0.50 (1/2 Marks)</option>
-                  <option value="custom">कस्टम मान (Custom)</option>
+                  <option value="custom">Custom</option>
                 </select>
 
                 {negativeMarkingType === 'custom' && (
@@ -874,7 +874,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="मान दर्ज करें"
+                    placeholder="Enter value"
                     value={customNegativeMarking}
                     onChange={(e) => setCustomNegativeMarking(parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -886,7 +886,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {/* Passing Marks % */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
-                <span>उत्तीर्ण प्रतिशत (Passing Marks %)</span>
+                <span>Passing Percentage (%)</span>
                 <span className="text-blue-600 dark:text-blue-400">{passingPercentage}%</span>
               </div>
               <input
@@ -903,7 +903,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {/* Test Mode Selection */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                डिफ़ॉल्ट मोड (Default Mode)
+                Default Mode
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -915,7 +915,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                       : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  परीक्षा मोड (Exam)
+                  Exam Mode
                 </button>
                 <button
                   type="button"
@@ -926,7 +926,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                       : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  अभ्यास मोड (Practice)
+                  Practice Mode
                 </button>
               </div>
             </div>
@@ -934,7 +934,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
             {/* Question Language Preference */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Default Question Language (प्रश्नों की भाषा)
+                Default Question Language (Question Language)
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -957,7 +957,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                       : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  हिंदी (Hindi)
+                  Hindi
                 </button>
               </div>
             </div>
@@ -971,7 +971,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onChange={(e) => setShuffleQuestions(e.target.checked)}
                   className="rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>प्रश्नों का क्रम यादृच्छिक करें (Shuffle Questions)</span>
+                <span>Shuffle Questions</span>
               </label>
 
               <label className="flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer">
@@ -981,7 +981,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onChange={(e) => setShuffleOptions(e.target.checked)}
                   className="rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>विकल्पों का क्रम यादृच्छिक करें (Shuffle Options)</span>
+                <span>Shuffle Options</span>
               </label>
 
               <label className="flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer">
@@ -991,16 +991,16 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onChange={(e) => setAllowReview(e.target.checked)}
                   className="rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>समीक्षा सुविधा सक्षम रखें (Enable Question Review)</span>
+                <span>Enable Question Review</span>
               </label>
             </div>
 
             {/* Summary & Save Action */}
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
               <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 text-xs flex justify-between">
-                <span>कुल प्रश्न: <strong>{parsedData.questions.length}</strong></span>
-                <span>पूर्णांक: <strong>{parsedData.questions.length * marksPerQuestion} Marks</strong></span>
-                <span>समय: <strong>{durationMinutes} Min</strong></span>
+                <span>Questions: <strong>{parsedData.questions.length}</strong></span>
+                <span>Total Marks: <strong>{parsedData.questions.length * marksPerQuestion} Marks</strong></span>
+                <span>Time: <strong>{durationMinutes} Min</strong></span>
               </div>
 
               {saveError && (
@@ -1015,7 +1015,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   onClick={onCancel}
                   className="w-1/3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs sm:text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
-                  रद्द करें
+                  Cancel
                 </button>
 
                 <button
@@ -1025,7 +1025,7 @@ export const CreateTestView: React.FC<CreateTestViewProps> = ({
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 transition-all"
                 >
                   <Save size={16} />
-                  <span>{isSubmitting ? 'सुरक्षित हो रहा है...' : 'टेस्ट सेव करें (Save Test)'}</span>
+                  <span>{isSubmitting ? 'Saving...' : 'Save Test'}</span>
                 </button>
               </div>
             </div>
