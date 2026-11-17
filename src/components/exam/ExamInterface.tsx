@@ -20,10 +20,11 @@ import {
   Moon,
   Languages
 } from 'lucide-react';
-import { TestItem, UserResponse, TestResult, TestAttempt, Question, AppSettings } from '../../types';
+import { TestItem, UserResponse, TestAttempt, Question, AppSettings } from '../../types';
 import { soundManager } from '../../utils/audio';
 import { getTranslation, Language } from '../../utils/translations';
 import { getQuestionDisplay, getQuestionDisplayAsync } from '../../utils/bilingualHelper';
+import { calculateTestResult, normalizeOptionIndex, prepareQuestionsForSession } from '../../utils/scoring';
 import { QuestionFigure } from '../common/QuestionFigure';
 import { MathText } from '../common/MathText';
 
@@ -39,6 +40,7 @@ interface ExamInterfaceProps {
   onExitWithoutSubmit: () => void;
   onAutosaveState: (state: {
     testId: string;
+    questions: Question[];
     remainingSeconds: number;
     responses: Record<number, UserResponse>;
     currentQuestionIndex: number;
@@ -65,30 +67,40 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
     return test.config.defaultQuestionLanguage || settings.questionLanguage || 'en';
   });
 
-  // Questions snapshot (shuffle if configured)
+  // Questions snapshot (shuffle questions/options if configured, keeping correctAnswerIndex aligned)
   const questions = useMemo(() => {
-    if (initialQuestions && initialQuestions.length > 0) return initialQuestions;
-    let list = [...test.questions];
-    if (test.config.shuffleQuestions) {
-      list = list.sort(() => Math.random() - 0.5);
+    if (initialQuestions && initialQuestions.length > 0) {
+      return initialQuestions.map((q) => ({
+        ...q,
+        correctAnswerIndex: normalizeOptionIndex(q.correctAnswerIndex, q.options?.length || 0)
+      }));
     }
-    return list;
+    return prepareQuestionsForSession(test.questions, test.config);
   }, [test, initialQuestions]);
 
   const totalQuestions = questions.length;
-  const [currentIndex, setCurrentIndex] = useState<number>(initialQuestionIndex);
+  const [currentIndex, setCurrentIndex] = useState<number>(() =>
+    Math.min(Math.max(0, initialQuestionIndex), Math.max(0, questions.length - 1))
+  );
 
   // User responses dictionary
   const [responses, setResponses] = useState<Record<number, UserResponse>>(() => {
-    if (initialResponses) return initialResponses;
     const initial: Record<number, UserResponse> = {};
     for (let i = 0; i < totalQuestions; i++) {
-      initial[i] = {
-        selectedOption: null,
-        isMarkedForReview: false,
-        timeSpentSeconds: 0,
-        visited: i === 0 // mark first question as visited
-      };
+      const existing = initialResponses?.[i];
+      initial[i] = existing
+        ? {
+            selectedOption: existing.selectedOption ?? null,
+            isMarkedForReview: Boolean(existing.isMarkedForReview),
+            timeSpentSeconds: Number(existing.timeSpentSeconds) || 0,
+            visited: Boolean(existing.visited) || i === 0
+          }
+        : {
+            selectedOption: null,
+            isMarkedForReview: false,
+            timeSpentSeconds: 0,
+            visited: i === 0
+          };
     }
     return initial;
   });
@@ -106,9 +118,11 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
   const [isPaletteDrawerOpen, setIsPaletteDrawerOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Time tracker for current question
+  // Time tracker for current question & latest-submit ref (avoids stale timer closure)
   const questionStartTimeRef = useRef<number>(Date.now());
   const timerIntervalRef = useRef<any>(null);
+  const hasSubmittedRef = useRef<boolean>(false);
+  const autoSubmitRef = useRef<() => void>(() => {});
 
   // Mark current question as visited
   useEffect(() => {
@@ -139,7 +153,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
       setRemainingSeconds(prev => {
         if (prev <= 1) {
           clearInterval(timerIntervalRef.current);
-          handleAutoSubmit('time_expired');
+          setTimeout(() => autoSubmitRef.current(), 0);
           return 0;
         }
         return prev - 1;
@@ -151,15 +165,17 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
     };
   }, [isPaused]);
 
-  // Autosave periodically and on response changes
+  // Autosave periodically and on response changes (saves active shuffled question order)
   useEffect(() => {
+    if (hasSubmittedRef.current) return;
     onAutosaveState({
       testId: test.id,
+      questions,
       remainingSeconds,
       responses,
       currentQuestionIndex: currentIndex
     });
-  }, [remainingSeconds, responses, currentIndex, test.id, onAutosaveState]);
+  }, [questions, remainingSeconds, responses, currentIndex, test.id, onAutosaveState]);
 
   // Prevent accidental navigation
   useEffect(() => {
@@ -294,7 +310,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
   const getQuestionStatus = (idx: number): 'answered' | 'not_answered' | 'review' | 'answered_review' | 'not_visited' => {
     const r = responses[idx];
     if (!r || !r.visited) return 'not_visited';
-    const hasAnswer = r.selectedOption !== null;
+    const hasAnswer = r.selectedOption !== null && r.selectedOption !== undefined;
     const isReview = r.isMarkedForReview;
 
     if (hasAnswer && isReview) return 'answered_review';
@@ -330,57 +346,32 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
     };
   }, [responses, totalQuestions]);
 
-  // Submit test and compute results
+  // Submit test and compute accurate results synchronously
   const handleFinalSubmit = () => {
-    commitQuestionTime(currentIndex);
+    if (hasSubmittedRef.current) return;
+    hasSubmittedRef.current = true;
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+
+    const activeElapsed = isPaused ? 0 : Math.max(0, Math.round((Date.now() - questionStartTimeRef.current) / 1000));
+    const finalResponses: Record<number, UserResponse> = {};
+    for (let i = 0; i < totalQuestions; i++) {
+      const base = responses[i] || {
+        selectedOption: null,
+        isMarkedForReview: false,
+        timeSpentSeconds: 0,
+        visited: i === currentIndex
+      };
+      finalResponses[i] = {
+        ...base,
+        selectedOption: base.selectedOption ?? null,
+        timeSpentSeconds: (base.timeSpentSeconds || 0) + (i === currentIndex ? activeElapsed : 0)
+      };
+    }
+
     soundManager.playSubmitSuccess();
 
-    // Marks calculation
-    const marksPerQ = test.config.marksPerQuestion;
-    const negPerQ = test.config.negativeMarking;
-
-    let correctCount = 0;
-    let incorrectCount = 0;
-    let attemptedCount = 0;
-    let totalTimeSpent = totalDurationSeconds - remainingSeconds;
-
-    questions.forEach((q, idx) => {
-      const resp = responses[idx];
-      if (resp && resp.selectedOption !== null) {
-        attemptedCount++;
-        if (resp.selectedOption === q.correctAnswerIndex) {
-          correctCount++;
-        } else {
-          incorrectCount++;
-        }
-      }
-    });
-
-    const unattemptedCount = totalQuestions - attemptedCount;
-    const positiveMarks = correctCount * marksPerQ;
-    const negativeMarks = incorrectCount * negPerQ;
-    const finalScore = positiveMarks - negativeMarks;
-    const maxMarks = totalQuestions * marksPerQ;
-    const percentage = maxMarks > 0 ? (finalScore / maxMarks) * 100 : 0;
-    const accuracy = attemptedCount > 0 ? (correctCount / attemptedCount) * 100 : 0;
-    const isPassed = percentage >= test.config.passingPercentage;
-
-    const result: TestResult = {
-      totalQuestions,
-      attemptedQuestions: attemptedCount,
-      correctAnswers: correctCount,
-      incorrectAnswers: incorrectCount,
-      unattemptedQuestions: unattemptedCount,
-      positiveMarks,
-      negativeMarks,
-      finalScore,
-      maxMarks,
-      percentage,
-      accuracy,
-      isPassed,
-      totalTimeSpentSeconds: totalTimeSpent,
-      averageTimePerQuestion: attemptedCount > 0 ? Math.round(totalTimeSpent / attemptedCount) : 0
-    };
+    const totalTimeSpent = Math.max(0, totalDurationSeconds - remainingSeconds);
+    const result = calculateTestResult(questions, finalResponses, test.config, totalTimeSpent);
 
     const attempt: TestAttempt = {
       id: `attempt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -394,7 +385,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
       submittedAt: Date.now(),
       durationSeconds: totalDurationSeconds,
       timeSpentSeconds: totalTimeSpent,
-      responses,
+      responses: finalResponses,
       questionsSnapshot: questions,
       result
     };
@@ -402,10 +393,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({
     onSubmitExam(attempt);
   };
 
-  const handleAutoSubmit = (reason: string) => {
-    alert('समय समाप्त हो गया है! आपकी परीक्षा स्वतः सबमिट की जा रही है। (Time is up! Submitting your test.)');
-    handleFinalSubmit();
-  };
+  autoSubmitRef.current = handleFinalSubmit;
 
   // Fullscreen toggle
   const toggleFullscreen = () => {

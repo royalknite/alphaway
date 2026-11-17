@@ -183,17 +183,21 @@ export function printResultReport(attempt: TestAttempt) {
   }
 
   const { result } = attempt;
+  const marksPerQ =
+    result.totalQuestions > 0 && result.maxMarks > 0
+      ? Math.round((result.maxMarks / result.totalQuestions) * 100) / 100
+      : 1;
 
   const questionsHtml = attempt.questionsSnapshot.map((q, idx) => {
     const userResp = attempt.responses[idx];
-    const selected = userResp ? userResp.selectedOption : null;
-    const isCorrect = selected === q.correctAnswerIndex;
+    const selected = userResp && userResp.selectedOption !== undefined ? userResp.selectedOption : null;
     const isAttempted = selected !== null;
+    const isCorrect = isAttempted && selected === q.correctAnswerIndex;
 
     let statusBadge = '<span style="color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Unattempted</span>';
     if (isAttempted) {
       if (isCorrect) {
-        statusBadge = '<span style="color: #059669; background: #ecfdf5; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Correct (+1)</span>';
+        statusBadge = `<span style="color: #059669; background: #ecfdf5; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Correct (+${marksPerQ})</span>`;
       } else {
         statusBadge = '<span style="color: #dc2626; background: #fef2f2; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Incorrect</span>';
       }

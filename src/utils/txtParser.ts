@@ -23,6 +23,7 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
   let currentImageUrl: string | undefined = undefined;
   let currentOptionImages: (string | null)[] = [null, null, null, null];
   let questionStartLine = 1;
+  let sawBlankLineSinceBlock = false;
   let state: 'IDLE' | 'READING_QUESTION' | 'READING_OPTIONS' | 'READING_EXPLANATION' = 'IDLE';
 
   // Helper regex patterns
@@ -35,10 +36,45 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
 
   // Single option match: A), (A), A., [A], A -, a), (a)
   const optionHeaderRegex = /^(?:\(?\s*([A-Da-d1-4])\s*[\)\.\-\]]|\b([A-Da-d])\s*[\)\.\-\]])\s*(.*)/;
+  // Inline multiple options regex
+  const inlineOptionsCheckRegex = /(?:^|\s+)(?:\(?\s*([A-Da-d])\s*[\)\.\-\]]|\b([A-Da-d])\s*[\)\.\-\]])\s*([^\n\r]*?)(?=(?:\s+(?:\(?\s*[A-Da-d]\s*[\)\.\-\]]|\b[A-Da-d]\s*[\)\.\-\]])|$))/g;
   // Answer line: Ans: B, Answer: B, उत्तर: B, Ans - (B)
   const explicitAnswerRegex = /^(?:ans|answer|उत्तर|सही उत्तर)[\s\:\-\=]+(?:\(?\s*([A-Da-d1-4])\s*\)?|\✅|\✔)/i;
   // Explanation line: Ex:, Exp:, Explanation:, व्याख्या:, हल:, Note:
   const explanationRegex = /^(?:ex|exp|explanation|व्याख्या|हल|note)[\s\:\-\=]+(.*)/i;
+  // Safe tick detection (won't mistake `2 * 3` multiplication for a check mark)
+  const tickDetectionRegex = /(?:[✅✔]|\[ans\]|\(ans\)|\(correct\)|^\*\s+|\s+\*$)/i;
+  const tickCleanupRegex = /(?:[✅✔]|\[ans\]|\(ans\)|\(correct\)|^\*\s+|\s+\*$)/gi;
+
+  // Look ahead from line `startIdx` to detect if an unnumbered stem is followed by A)/B) options
+  const hasUpcomingOptions = (startIdx: number): boolean => {
+    let checked = 0;
+    for (let j = startIdx + 1; j < lines.length && checked < 10; j++) {
+      const next = lines[j].trim();
+      if (!next) continue;
+      checked++;
+      if (isExplicitQuestionTag.test(next) || isPureNumberDot.test(next)) return false;
+      if (explanationRegex.test(next) || explicitAnswerRegex.test(next)) return false;
+      if (optionHeaderRegex.test(next)) return true;
+      if (Array.from(next.matchAll(inlineOptionsCheckRegex)).length >= 2) return true;
+    }
+    return false;
+  };
+
+  const resetForNewQuestion = (num: number, text: string, lineNo: number) => {
+    currentQuestionNumber = num;
+    currentQuestionText = text;
+    currentOptions = [];
+    currentCorrectIndex = -1;
+    currentExplanation = '';
+    currentFigureType = undefined;
+    currentFigureData = undefined;
+    currentImageUrl = undefined;
+    currentOptionImages = [null, null, null, null];
+    questionStartLine = lineNo;
+    sawBlankLineSinceBlock = false;
+    state = 'READING_QUESTION';
+  };
 
   const commitCurrentQuestion = () => {
     if (state === 'IDLE' && !currentQuestionText) return;
@@ -124,40 +160,28 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
     const trimmedLine = rawLine.trim();
 
     if (!trimmedLine) {
-      // Empty line could be separator or line break inside explanation/question
+      sawBlankLineSinceBlock = true;
       if (state === 'READING_EXPLANATION' && currentExplanation) {
         currentExplanation += '\n';
       }
       continue;
     }
 
-    // Check if line matches a new Question Header
+    // Check if line matches a new Explicit Question Header
     const isExplicit = isExplicitQuestionTag.test(trimmedLine);
     const isNumDot = isPureNumberDot.test(trimmedLine);
 
     if (isExplicit || (isNumDot && state !== 'READING_QUESTION')) {
-      // Save previous question if exists
       commitCurrentQuestion();
-
-      // Reset for new question
       const qMatch = trimmedLine.match(questionHeaderRegex);
       const num = qMatch ? parseInt(qMatch[1], 10) : questions.length + 1;
       const text = qMatch ? qMatch[2] : trimmedLine;
-      currentQuestionNumber = num;
-      currentQuestionText = text;
-      currentOptions = [];
-      currentCorrectIndex = -1;
-      currentExplanation = '';
-      currentFigureType = undefined;
-      currentFigureData = undefined;
-      currentImageUrl = undefined;
-      currentOptionImages = [null, null, null, null];
-      questionStartLine = i + 1;
+      resetForNewQuestion(num, text, i + 1);
       state = 'READING_QUESTION';
       continue;
     }
 
-    // Check if line is an Image Tag: [img: https://...] or [image: ...] or Image: ...
+    // Check if line is an Image Tag
     const imgTagMatch = trimmedLine.match(/^\[(?:img|image|चित्र|photo)[\s\:\=]+(.*?)\]$/i) ||
                         trimmedLine.match(/^(?:image|चित्र|फोटो)[\s\:\=]+(.*)$/i);
     if (imgTagMatch && state !== 'IDLE') {
@@ -165,7 +189,7 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
       continue;
     }
 
-    // Check if line is a Figure Tag: [figure: counting_triangles layers=3 horizontallines=1]
+    // Check if line is a Figure Tag
     const figureTagMatch = trimmedLine.match(/^\[(?:figure|आकृति|चित्र)[\s\:\=]+(.*?)\]$/i);
     if (figureTagMatch && state !== 'IDLE') {
       const figContent = figureTagMatch[1].trim();
@@ -202,11 +226,12 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
     const expMatch = trimmedLine.match(explanationRegex);
     if (expMatch && state !== 'IDLE') {
       state = 'READING_EXPLANATION';
+      sawBlankLineSinceBlock = false;
       currentExplanation = expMatch[1] || '';
       continue;
     }
 
-    // Check if line is explicit Answer (e.g. "Ans: B" or "उत्तर: C")
+    // Check if line is explicit Answer
     const ansMatch = trimmedLine.match(explicitAnswerRegex);
     if (ansMatch && state !== 'IDLE') {
       const letter = (ansMatch[1] || '').toUpperCase();
@@ -214,20 +239,20 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
       else if (letter === 'B' || letter === '2') currentCorrectIndex = 1;
       else if (letter === 'C' || letter === '3') currentCorrectIndex = 2;
       else if (letter === 'D' || letter === '4') currentCorrectIndex = 3;
+      sawBlankLineSinceBlock = false;
       continue;
     }
 
-    // Check if line contains MULTIPLE inline options (e.g. "A) 10 B) 20 C) 30 ✅ D) 40")
-    const inlineOptionsRegex = /(?:^|\s+)(?:\(?\s*([A-Da-d])\s*[\)\.\-\]]|\b([A-Da-d])\s*[\)\.\-\]])\s*([^\n\r]*?)(?=(?:\s+(?:\(?\s*[A-Da-d]\s*[\)\.\-\]]|\b[A-Da-d]\s*[\)\.\-\]])|$))/g;
-    const inlineMatches = Array.from(trimmedLine.matchAll(inlineOptionsRegex));
-
+    // Check if line contains MULTIPLE inline options
+    const inlineMatches = Array.from(trimmedLine.matchAll(inlineOptionsCheckRegex));
     if (inlineMatches.length >= 2 && state !== 'IDLE') {
       state = 'READING_OPTIONS';
+      sawBlankLineSinceBlock = false;
       inlineMatches.forEach((m) => {
         let optContent = (m[3] || '').trim();
-        const hasTick = /[✅✔]|\*|\[ans\]|\(ans\)|\(correct\)/i.test(optContent);
+        const hasTick = tickDetectionRegex.test(optContent);
         if (hasTick) {
-          optContent = optContent.replace(/[✅✔]|\*|\[ans\]|\(ans\)|\(correct\)/gi, '').trim();
+          optContent = optContent.replace(tickCleanupRegex, '').trim();
         }
         const optIdx = currentOptions.length;
         currentOptions.push(optContent);
@@ -240,19 +265,16 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
     const optMatch = trimmedLine.match(optionHeaderRegex);
     if (optMatch && state !== 'IDLE') {
       state = 'READING_OPTIONS';
-      const optionChar = (optMatch[1] || optMatch[2] || '').toUpperCase();
+      sawBlankLineSinceBlock = false;
       let optionContent = optMatch[3] ? optMatch[3].trim() : '';
 
-      // Check if option contains tick mark or [ans] or (correct)
-      const hasTick = /[✅✔]|\*|\[ans\]|\(ans\)|\(correct\)/i.test(optionContent);
+      const hasTick = tickDetectionRegex.test(optionContent);
       if (hasTick) {
-        // Remove the tick symbol from option text
-        optionContent = optionContent.replace(/[✅✔]|\*|\[ans\]|\(ans\)|\(correct\)/gi, '').trim();
+        optionContent = optionContent.replace(tickCleanupRegex, '').trim();
       }
 
       const optIdx = currentOptions.length;
 
-      // Check if option contains option image tag: [img: ...]
       const optImgMatch = optionContent.match(/\[(?:img|image|चित्र)[\s\:\=]+(.*?)\]/i);
       if (optImgMatch) {
         currentOptionImages[optIdx] = optImgMatch[1].trim();
@@ -260,17 +282,26 @@ export function parseQuestionsFromTxt(rawText: string, defaultSubject = 'General
       }
 
       currentOptions.push(optionContent);
-
       if (hasTick) {
         currentCorrectIndex = optIdx;
-      } else if (currentCorrectIndex === -1) {
-        // If option indicator is letter and we check if matches
-        if (optionChar === 'A' && optIdx === 0 && hasTick) currentCorrectIndex = 0;
-        if (optionChar === 'B' && optIdx === 1 && hasTick) currentCorrectIndex = 1;
-        if (optionChar === 'C' && optIdx === 2 && hasTick) currentCorrectIndex = 2;
-        if (optionChar === 'D' && optIdx === 3 && hasTick) currentCorrectIndex = 3;
       }
       continue;
+    }
+
+    // Support unnumbered question stems (e.g. pasted without "Q1." / "1." prefix):
+    // If we are IDLE, or finished reading options/explanation and upcoming lines contain options A)/B),
+    // treat this line as the start of a new question!
+    if (
+      state === 'IDLE' ||
+      ((state === 'READING_EXPLANATION' || (state === 'READING_OPTIONS' && currentOptions.length >= 2)) &&
+        (sawBlankLineSinceBlock || hasUpcomingOptions(i)))
+    ) {
+      if (hasUpcomingOptions(i)) {
+        if (state !== 'IDLE') commitCurrentQuestion();
+        resetForNewQuestion(questions.length + 1, trimmedLine, i + 1);
+        state = 'READING_QUESTION';
+        continue;
+      }
     }
 
     // If we are reading explanation, append

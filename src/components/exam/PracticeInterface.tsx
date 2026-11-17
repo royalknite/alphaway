@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   HelpCircle,
   CheckCircle2,
@@ -19,10 +19,11 @@ import {
   Moon,
   Languages
 } from 'lucide-react';
-import { TestItem, Question, UserResponse, TestAttempt, TestResult, AppSettings } from '../../types';
+import { TestItem, Question, UserResponse, TestAttempt, AppSettings } from '../../types';
 import { soundManager } from '../../utils/audio';
 import { getTranslation, Language } from '../../utils/translations';
-import { getQuestionDisplay } from '../../utils/bilingualHelper';
+import { getQuestionDisplay, getQuestionDisplayAsync } from '../../utils/bilingualHelper';
+import { calculateTestResult, prepareQuestionsForSession } from '../../utils/scoring';
 import { QuestionFigure } from '../common/QuestionFigure';
 import { MathText } from '../common/MathText';
 
@@ -48,20 +49,58 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
     return test.config.defaultQuestionLanguage || settings.questionLanguage || 'en';
   });
 
-  const [questions, setQuestions] = useState<Question[]>(test.questions);
+  const [questions, setQuestions] = useState<Question[]>(() =>
+    prepareQuestionsForSession(test.questions, test.config)
+  );
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [userAnswers, setUserAnswers] = useState<Record<number, number | null>>({});
   const [showExplanationImmediately, setShowExplanationImmediately] = useState<boolean>(true);
   const [startTime] = useState<number>(Date.now());
   const [filterMode, setFilterMode] = useState<'all' | 'incorrect' | 'unanswered'>('all');
+  const [notice, setNotice] = useState<string | null>(null);
 
   // PAUSE state
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
+  // Per-question time tracking
+  const questionStartRef = useRef<number>(Date.now());
+  const perQuestionTimeRef = useRef<Record<number, number>>({});
+
+  const commitActiveQuestionTime = (idx: number) => {
+    if (isPaused) return;
+    const elapsed = Math.max(0, Math.round((Date.now() - questionStartRef.current) / 1000));
+    perQuestionTimeRef.current[idx] = (perQuestionTimeRef.current[idx] || 0) + elapsed;
+    questionStartRef.current = Date.now();
+  };
+
+  useEffect(() => {
+    if (!isPaused) {
+      questionStartRef.current = Date.now();
+    }
+  }, [currentIndex, isPaused]);
+
   const currentQ = questions[currentIndex];
   const selectedOption = userAnswers[currentIndex] ?? null;
-  const isAnswered = selectedOption !== null;
-  const isCorrect = isAnswered && selectedOption === currentQ.correctAnswerIndex;
+  const isAnswered = selectedOption !== null && selectedOption !== undefined;
+  const isCorrect = isAnswered && selectedOption === currentQ?.correctAnswerIndex;
+
+  // Async localized question display (with formula/SI-unit preservation)
+  const [questionDisplay, setQuestionDisplay] = useState(() =>
+    currentQ ? getQuestionDisplay(currentQ, questionLang) : { text: '', options: [], explanation: '' }
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentQ) {
+      setQuestionDisplay({ text: '', options: [], explanation: '' });
+      return;
+    }
+    setQuestionDisplay(getQuestionDisplay(currentQ, questionLang));
+    getQuestionDisplayAsync(currentQ, questionLang).then(display => {
+      if (!cancelled) setQuestionDisplay(display);
+    });
+    return () => { cancelled = true; };
+  }, [currentQ, questionLang]);
 
   // Toggle Theme
   const toggleTheme = () => {
@@ -77,7 +116,7 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
 
   // Handle Option selection
   const handleOptionSelect = (optionIndex: number) => {
-    if (isPaused) return;
+    if (isPaused || !currentQ) return;
     if (userAnswers[currentIndex] !== undefined) return; // locked once answered in practice
 
     const isRight = optionIndex === currentQ.correctAnswerIndex;
@@ -96,6 +135,7 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
   // Next Question
   const handleNext = () => {
     if (isPaused) return;
+    commitActiveQuestionTime(currentIndex);
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
@@ -104,6 +144,7 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
   // Prev Question
   const handlePrev = () => {
     if (isPaused) return;
+    commitActiveQuestionTime(currentIndex);
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
     }
@@ -121,10 +162,13 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
       .map(item => item.q);
 
     if (incorrectIndices.length === 0) {
-      alert('कोई गलत प्रश्न नहीं है! (No incorrect questions to retry!)');
+      setNotice('कोई गलत प्रश्न नहीं है! (No incorrect questions to retry.)');
+      setTimeout(() => setNotice(null), 3000);
       return;
     }
 
+    perQuestionTimeRef.current = {};
+    questionStartRef.current = Date.now();
     setQuestions(incorrectIndices);
     setCurrentIndex(0);
     setUserAnswers({});
@@ -137,10 +181,13 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
     const unansweredQuestions = questions.filter((_, idx) => userAnswers[idx] === undefined || userAnswers[idx] === null);
 
     if (unansweredQuestions.length === 0) {
-      alert('सभी प्रश्न हल हो चुके हैं! (All questions have been answered!)');
+      setNotice('सभी प्रश्न हल हो चुके हैं! (All questions have been answered.)');
+      setTimeout(() => setNotice(null), 3000);
       return;
     }
 
+    perQuestionTimeRef.current = {};
+    questionStartRef.current = Date.now();
     setQuestions(unansweredQuestions);
     setCurrentIndex(0);
     setUserAnswers({});
@@ -150,58 +197,31 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
   // Reset & Practice All Again
   const handleRestartAll = () => {
     if (isPaused) return;
-    setQuestions(test.questions);
+    perQuestionTimeRef.current = {};
+    questionStartRef.current = Date.now();
+    setQuestions(prepareQuestionsForSession(test.questions, test.config));
     setCurrentIndex(0);
     setUserAnswers({});
     setFilterMode('all');
   };
 
-  // Finish Practice and Save to History
+  // Finish Practice and Save to History using unified accurate scoring
   const handleFinishPractice = () => {
-    const totalQuestions = questions.length;
-    let correct = 0;
-    let incorrect = 0;
-    let attempted = 0;
-
+    commitActiveQuestionTime(currentIndex);
     const responses: Record<number, UserResponse> = {};
 
-    questions.forEach((q, idx) => {
+    questions.forEach((_, idx) => {
       const ans = userAnswers[idx] ?? null;
-      if (ans !== null) {
-        attempted++;
-        if (ans === q.correctAnswerIndex) correct++;
-        else incorrect++;
-      }
-
       responses[idx] = {
         selectedOption: ans,
         isMarkedForReview: false,
-        timeSpentSeconds: 15,
-        visited: true
+        timeSpentSeconds: perQuestionTimeRef.current[idx] || 0,
+        visited: ans !== null || idx <= currentIndex
       };
     });
 
-    const timeSpent = Math.round((Date.now() - startTime) / 1000);
-    const marksPerQ = test.config.marksPerQuestion;
-    const finalScore = correct * marksPerQ;
-    const maxMarks = totalQuestions * marksPerQ;
-
-    const result: TestResult = {
-      totalQuestions,
-      attemptedQuestions: attempted,
-      correctAnswers: correct,
-      incorrectAnswers: incorrect,
-      unattemptedQuestions: totalQuestions - attempted,
-      positiveMarks: finalScore,
-      negativeMarks: 0,
-      finalScore,
-      maxMarks,
-      percentage: maxMarks > 0 ? (finalScore / maxMarks) * 100 : 0,
-      accuracy: attempted > 0 ? (correct / attempted) * 100 : 0,
-      isPassed: true,
-      totalTimeSpentSeconds: timeSpent,
-      averageTimePerQuestion: attempted > 0 ? Math.round(timeSpent / attempted) : 0
-    };
+    const timeSpent = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+    const result = calculateTestResult(questions, responses, test.config, timeSpent);
 
     const attempt: TestAttempt = {
       id: `practice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -338,100 +358,101 @@ export const PracticeInterface: React.FC<PracticeInterfaceProps> = ({
             </div>
           </div>
 
+          {notice && (
+            <div className="px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-200">
+              {notice}
+            </div>
+          )}
+
           {/* Question Text Card */}
-          {(() => {
-            const questionDisplay = getQuestionDisplay(currentQ, questionLang);
-            return (
-              <>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-xs">
-                  <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
-                    <MathText>{questionDisplay.text}</MathText>
-                  </div>
-                </div>
+          <>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-relaxed">
+                <MathText>{questionDisplay.text}</MathText>
+              </div>
+            </div>
 
-                {/* Question Figure / Diagram */}
-                <QuestionFigure question={currentQ} />
+            {/* Question Figure / Diagram */}
+            <QuestionFigure question={currentQ} />
 
-                {/* Options */}
-                <div className="space-y-3">
-                  {currentQ.options.map((opt, optIdx) => {
-                    const isSelected = selectedOption === optIdx;
-                    const isRight = currentQ.correctAnswerIndex === optIdx;
-                    const optText = questionDisplay.options[optIdx] ?? opt;
+            {/* Options */}
+            <div className="space-y-3">
+              {currentQ.options.map((opt, optIdx) => {
+                const isSelected = selectedOption === optIdx;
+                const isRight = currentQ.correctAnswerIndex === optIdx;
+                const optText = questionDisplay.options[optIdx] ?? opt;
 
-                    let style = 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300';
-                    if (isAnswered) {
-                      if (isRight) {
-                        style = 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-900 dark:text-emerald-100 font-bold';
-                      } else if (isSelected && !isRight) {
-                        style = 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 text-rose-900 dark:text-rose-100 font-bold';
-                      }
-                    }
+                let style = 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300';
+                if (isAnswered) {
+                  if (isRight) {
+                    style = 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-900 dark:text-emerald-100 font-bold';
+                  } else if (isSelected && !isRight) {
+                    style = 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 text-rose-900 dark:text-rose-100 font-bold';
+                  }
+                }
 
-                    return (
-                      <div
-                        key={optIdx}
-                        onClick={() => handleOptionSelect(optIdx)}
-                        className={`flex items-start gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer ${style}`}
-                      >
-                        <div
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                            isAnswered && isRight
-                              ? 'bg-emerald-600 text-white'
-                              : isAnswered && isSelected && !isRight
-                              ? 'bg-rose-600 text-white'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {String.fromCharCode(65 + optIdx)}
+                return (
+                  <div
+                    key={optIdx}
+                    onClick={() => handleOptionSelect(optIdx)}
+                    className={`flex items-start gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer ${style}`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                        isAnswered && isRight
+                          ? 'bg-emerald-600 text-white'
+                          : isAnswered && isSelected && !isRight
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {String.fromCharCode(65 + optIdx)}
+                    </div>
+
+                    <div className="flex-1 text-sm sm:text-base font-semibold pt-1">
+                      <div><MathText>{optText}</MathText></div>
+                      {currentQ.optionImages?.[optIdx] && (
+                        <div className="mt-2 p-1 max-w-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                          <img
+                            src={currentQ.optionImages[optIdx]!}
+                            alt={`Option ${String.fromCharCode(65 + optIdx)}`}
+                            className="max-h-36 w-auto object-contain rounded-lg"
+                          />
                         </div>
+                      )}
+                    </div>
 
-                        <div className="flex-1 text-sm sm:text-base font-semibold pt-1">
-                          <div><MathText>{optText}</MathText></div>
-                          {currentQ.optionImages?.[optIdx] && (
-                            <div className="mt-2 p-1 max-w-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                              <img
-                                src={currentQ.optionImages[optIdx]!}
-                                alt={`Option ${String.fromCharCode(65 + optIdx)}`}
-                                className="max-h-36 w-auto object-contain rounded-lg"
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        {isAnswered && isRight && (
-                          <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-xs pt-1.5 shrink-0">
-                            <Check size={16} />
-                            <span>{t.correctAnswerLabel}</span>
-                          </div>
-                        )}
-
-                        {isAnswered && isSelected && !isRight && (
-                          <div className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold text-xs pt-1.5 shrink-0">
-                            <X size={16} />
-                            <span>{t.yourChoiceLabel}</span>
-                          </div>
-                        )}
+                    {isAnswered && isRight && (
+                      <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-xs pt-1.5 shrink-0">
+                        <Check size={16} />
+                        <span>{t.correctAnswerLabel}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
 
-                {/* Explanation Box */}
-                {isAnswered && showExplanationImmediately && (
-                  <div className="p-5 rounded-2xl bg-blue-50 dark:bg-slate-900 border-2 border-blue-200 dark:border-blue-900/60 shadow-sm space-y-2 animate-fade-in">
-                    <div className="flex items-center gap-2 font-bold text-blue-900 dark:text-blue-300 text-sm">
-                      <BookOpen size={16} className="text-blue-600" />
-                      <span>{t.explanationTitle}</span>
-                    </div>
-                    <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                      <MathText>{questionDisplay.explanation || 'No explanation available.'}</MathText>
-                    </div>
+                    {isAnswered && isSelected && !isRight && (
+                      <div className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold text-xs pt-1.5 shrink-0">
+                        <X size={16} />
+                        <span>{t.yourChoiceLabel}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </>
-            );
-          })()}
+                );
+              })}
+            </div>
+
+            {/* Explanation Box */}
+            {isAnswered && showExplanationImmediately && (
+              <div className="p-5 rounded-2xl bg-blue-50 dark:bg-slate-900 border-2 border-blue-200 dark:border-blue-900/60 shadow-sm space-y-2 animate-fade-in">
+                <div className="flex items-center gap-2 font-bold text-blue-900 dark:text-blue-300 text-sm">
+                  <BookOpen size={16} className="text-blue-600" />
+                  <span>{t.explanationTitle}</span>
+                </div>
+                <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                  <MathText>{questionDisplay.explanation || 'No explanation available.'}</MathText>
+                </div>
+              </div>
+            )}
+          </>
         </div>
 
         {/* Practice Bottom Controls */}

@@ -2,6 +2,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Question } from '../types';
 import { normalizeHindiText } from './hindiNormalizer';
+import { normalizeOptionIndex } from './scoring';
 import { EXTRACTION_PROMPT, parseExtractedModelJson } from './extractionPrompt';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
@@ -820,8 +821,18 @@ function postProcessQuestions(
   rawQuestions.forEach((raw, idx) => {
     const text = cleanExtractedMathMarkup(normalizeHindiText(String(raw.text || '')).trim());
     const rawOptions = Array.isArray(raw.options) ? raw.options : [];
+
+    // Detect any tick mark inside raw option strings before cleaning them out
+    let tickDetectedIdx = -1;
     const options = rawOptions
-      .map((opt) => cleanExtractedMathMarkup(cleanOptionPrefix(normalizeHindiText(String(opt ?? '')).trim())))
+      .map((opt, rawOptIdx) => {
+        const rawStr = String(opt ?? '').trim();
+        if (tickDetectedIdx === -1 && /[✅✔✓]/.test(rawStr)) {
+          tickDetectedIdx = rawOptIdx;
+        }
+        const cleanedOpt = rawStr.replace(/[✅✔]/g, '').trim();
+        return cleanExtractedMathMarkup(cleanOptionPrefix(normalizeHindiText(cleanedOpt).trim()));
+      })
       .filter((opt, optIdx) => opt.length > 0 || optIdx < 4);
 
     if (!text && options.length < 2) return;
@@ -842,13 +853,22 @@ function postProcessQuestions(
 
     const explanation = cleanExtractedMathMarkup(normalizeHindiText(String(raw.explanation || '')).trim());
     const subject = normalizeHindiText(String(raw.subject || '')).trim() || undefined;
-    const correctAnswerIndex =
-      typeof raw.correctAnswerIndex === 'number' &&
-      Number.isInteger(raw.correctAnswerIndex) &&
-      raw.correctAnswerIndex >= 0 &&
-      raw.correctAnswerIndex < options.length
-        ? raw.correctAnswerIndex
-        : -1;
+    let correctAnswerIndex = normalizeOptionIndex(raw.correctAnswerIndex, options.length);
+    if (correctAnswerIndex === -1 && tickDetectedIdx >= 0 && tickDetectedIdx < options.length) {
+      correctAnswerIndex = tickDetectedIdx;
+    }
+    if (correctAnswerIndex === -1 && explanation) {
+      const expAnsMatch = explanation.match(
+        /(?:^|\n|\s)(?:ans|answer|correct answer|correct option|उत्तर|सही उत्तर|सही विकल्प)\s*(?:is|है|:|\-|=)+\s*\(?([A-Da-d1-4])\)?(?:\b|$)/i
+      );
+      if (expAnsMatch) {
+        const tok = expAnsMatch[1].toUpperCase();
+        const candidateIdx = /^[1-4]$/.test(tok) ? Number(tok) - 1 : tok.charCodeAt(0) - 65;
+        if (candidateIdx >= 0 && candidateIdx < options.length) {
+          correctAnswerIndex = candidateIdx;
+        }
+      }
+    }
 
     let figureType = mapFigureType(raw.figureType);
     let figureData: any = undefined;

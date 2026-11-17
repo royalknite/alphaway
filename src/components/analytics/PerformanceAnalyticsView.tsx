@@ -12,6 +12,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { TestAttempt, TestItem } from '../../types';
+import { normalizeOptionIndex } from '../../utils/scoring';
 
 interface PerformanceAnalyticsViewProps {
   attempts: TestAttempt[];
@@ -52,7 +53,12 @@ export const PerformanceAnalyticsView: React.FC<PerformanceAnalyticsViewProps> =
         const sub = q.subject || 'सामान्य (General)';
         const curr = map.get(sub) || { correct: 0, total: 0 };
         const resp = a.responses[idx];
-        const isRight = resp && resp.selectedOption === q.correctAnswerIndex;
+        const optLen = Array.isArray(q.options) ? q.options.length : 0;
+        const selected = resp && resp.selectedOption !== null && resp.selectedOption !== undefined
+          ? normalizeOptionIndex(resp.selectedOption, optLen)
+          : -1;
+        const correctIdx = normalizeOptionIndex(q.correctAnswerIndex, optLen);
+        const isRight = selected >= 0 && correctIdx >= 0 && selected === correctIdx;
         map.set(sub, {
           correct: curr.correct + (isRight ? 1 : 0),
           total: curr.total + 1

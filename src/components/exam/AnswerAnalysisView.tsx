@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -11,9 +11,10 @@ import {
   Printer,
   Bookmark
 } from 'lucide-react';
-import { TestAttempt } from '../../types';
+import { TestAttempt, Question, UserResponse } from '../../types';
 import { printResultReport } from '../../utils/pdfExport';
-import { getQuestionDisplay } from '../../utils/bilingualHelper';
+import { getQuestionDisplay, getQuestionDisplayAsync } from '../../utils/bilingualHelper';
+import { normalizeOptionIndex } from '../../utils/scoring';
 import { QuestionFigure } from '../common/QuestionFigure';
 import { MathText } from '../common/MathText';
 
@@ -21,6 +22,169 @@ interface AnswerAnalysisViewProps {
   attempt: TestAttempt;
   onBackToResult: () => void;
 }
+
+interface AnalysisQuestionCardProps {
+  q: Question;
+  idx: number;
+  resp: UserResponse | undefined;
+  questionLang: 'en' | 'hi';
+}
+
+const AnalysisQuestionCard: React.FC<AnalysisQuestionCardProps> = ({
+  q,
+  idx,
+  resp,
+  questionLang
+}) => {
+  const [display, setDisplay] = useState(() => getQuestionDisplay(q, questionLang));
+
+  useEffect(() => {
+    let cancelled = false;
+    setDisplay(getQuestionDisplay(q, questionLang));
+    getQuestionDisplayAsync(q, questionLang).then((resolved) => {
+      if (!cancelled) setDisplay(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [q, questionLang]);
+
+  const optLen = Array.isArray(q.options) ? q.options.length : 0;
+  const selected =
+    resp && resp.selectedOption !== null && resp.selectedOption !== undefined
+      ? normalizeOptionIndex(resp.selectedOption, optLen)
+      : -1;
+  const correctIdx = normalizeOptionIndex(q.correctAnswerIndex, optLen);
+  const isAttempted = selected >= 0;
+  const isCorrect = isAttempted && correctIdx >= 0 && selected === correctIdx;
+  const isReview = resp ? Boolean(resp.isMarkedForReview) : false;
+  const timeSpent = resp ? Number(resp.timeSpentSeconds) || 0 : 0;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+      {/* Question Header & Status Badge */}
+      <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-xs">
+            प्रश्न (Q) {idx + 1}
+          </span>
+
+          {isReview && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-purple-600 dark:text-purple-400">
+              <Bookmark size={13} />
+              <span>समीक्षा चिह्नित था</span>
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1 text-xs text-slate-400 font-medium">
+            <Clock size={13} />
+            <span>{timeSpent}s</span>
+          </span>
+
+          {/* Status Badge */}
+          {!isAttempted ? (
+            <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs">
+              अनुत्तरित (Unattempted)
+            </span>
+          ) : isCorrect ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
+              <Check size={14} />
+              <span>सही उत्तर (+Marks)</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold text-xs">
+              <X size={14} />
+              <span>गलत उत्तर (-Neg)</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Question Text */}
+      <div className="text-base font-bold text-slate-900 dark:text-white leading-relaxed">
+        <MathText>{display.text}</MathText>
+      </div>
+
+      {/* Question Figure / Diagram */}
+      <QuestionFigure question={q} />
+
+      {/* Options List with Highlighting */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+        {q.options.map((opt, optIdx) => {
+          const isRight = correctIdx === optIdx;
+          const isUserPick = isAttempted && selected === optIdx;
+          const optText = display.options[optIdx] ?? opt;
+
+          let cardClass = 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+          if (isRight) {
+            cardClass = 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold ring-1 ring-emerald-500';
+          } else if (isUserPick && !isRight) {
+            cardClass = 'bg-rose-50 dark:bg-rose-950/50 border-rose-500 text-rose-950 dark:text-rose-100 font-bold ring-1 ring-rose-500';
+          }
+
+          return (
+            <div
+              key={optIdx}
+              className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all ${cardClass}`}
+            >
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                  isRight
+                    ? 'bg-emerald-600 text-white'
+                    : isUserPick
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {String.fromCharCode(65 + optIdx)}
+              </div>
+
+              <div className="flex-1 text-xs sm:text-sm pt-1">
+                <div><MathText>{optText}</MathText></div>
+                {q.optionImages?.[optIdx] && (
+                  <div className="mt-2 p-1 max-w-xs bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                    <img
+                      src={q.optionImages[optIdx]!}
+                      alt={`Option ${String.fromCharCode(65 + optIdx)}`}
+                      className="max-h-32 w-auto object-contain rounded"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {isRight && (
+                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-xs pt-1 shrink-0">
+                  <Check size={14} />
+                  <span>{questionLang === 'en' ? 'Correct' : 'सही'}</span>
+                </div>
+              )}
+
+              {isUserPick && !isRight && (
+                <div className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold text-xs pt-1 shrink-0">
+                  <X size={14} />
+                  <span>{questionLang === 'en' ? 'Your Choice' : 'आपका चयन'}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Explanation Box */}
+      <div className="p-4 rounded-xl bg-blue-50/70 dark:bg-slate-800/80 border-l-4 border-blue-600 text-xs sm:text-sm space-y-1">
+        <div className="flex items-center gap-1.5 font-bold text-blue-900 dark:text-blue-300">
+          <BookOpen size={15} />
+          <span>{questionLang === 'en' ? 'Explanation:' : 'व्याख्या / Explanation:'}</span>
+        </div>
+        <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
+          <MathText>{display.explanation || q.explanation || (questionLang === 'en' ? 'No explanation available.' : 'इस प्रश्न के लिए कोई अतिरिक्त व्याख्या उपलब्ध नहीं है।')}</MathText>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
   attempt,
@@ -38,10 +202,15 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
       .map((q, idx) => ({ q, idx }))
       .filter(({ q, idx }) => {
         const resp = attempt.responses[idx];
-        const selected = resp ? resp.selectedOption : null;
-        const isAttempted = selected !== null;
-        const isCorrect = isAttempted && selected === q.correctAnswerIndex;
-        const isReview = resp ? resp.isMarkedForReview : false;
+        const optLen = Array.isArray(q.options) ? q.options.length : 0;
+        const selected =
+          resp && resp.selectedOption !== null && resp.selectedOption !== undefined
+            ? normalizeOptionIndex(resp.selectedOption, optLen)
+            : -1;
+        const correctIdx = normalizeOptionIndex(q.correctAnswerIndex, optLen);
+        const isAttempted = selected >= 0;
+        const isCorrect = isAttempted && correctIdx >= 0 && selected === correctIdx;
+        const isReview = resp ? Boolean(resp.isMarkedForReview) : false;
 
         if (filter === 'correct' && !isCorrect) return false;
         if (filter === 'incorrect' && (!isAttempted || isCorrect)) return false;
@@ -49,8 +218,9 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
         if (filter === 'review' && !isReview) return false;
 
         if (search.trim()) {
-          const matchText = q.text.toLowerCase().includes(search.toLowerCase());
-          const matchExp = (q.explanation || '').toLowerCase().includes(search.toLowerCase());
+          const term = search.toLowerCase();
+          const matchText = (q.text || '').toLowerCase().includes(term);
+          const matchExp = (q.explanation || '').toLowerCase().includes(term);
           if (!matchText && !matchExp) return false;
         }
 
@@ -169,149 +339,15 @@ export const AnswerAnalysisView: React.FC<AnswerAnalysisViewProps> = ({
             इस फ़िल्टर में कोई प्रश्न नहीं मिला।
           </div>
         ) : (
-          filteredIndices.map(({ q, idx }) => {
-            const resp = attempt.responses[idx];
-            const selected = resp ? resp.selectedOption : null;
-            const isAttempted = selected !== null;
-            const isCorrect = isAttempted && selected === q.correctAnswerIndex;
-            const isReview = resp ? resp.isMarkedForReview : false;
-            const timeSpent = resp ? resp.timeSpentSeconds : 0;
-
-            return (
-              <div
-                key={q.id || idx}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4"
-              >
-                {/* Question Header & Status Badge */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-xs">
-                      प्रश्न (Q) {idx + 1}
-                    </span>
-
-                    {isReview && (
-                      <span className="flex items-center gap-1 text-[11px] font-semibold text-purple-600 dark:text-purple-400">
-                        <Bookmark size={13} />
-                        <span>समीक्षा चिह्नित था</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1 text-xs text-slate-400 font-medium">
-                      <Clock size={13} />
-                      <span>{timeSpent}s</span>
-                    </span>
-
-                    {/* Status Badge */}
-                    {!isAttempted ? (
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs">
-                        अनुत्तरित (Unattempted)
-                      </span>
-                    ) : isCorrect ? (
-                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
-                        <Check size={14} />
-                        <span>सही उत्तर (+Marks)</span>
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold text-xs">
-                        <X size={14} />
-                        <span>गलत उत्तर (-Neg)</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Question Text */}
-                {(() => {
-                  const display = getQuestionDisplay(q, questionLang);
-                  return (
-                    <>
-                      <div className="text-base font-bold text-slate-900 dark:text-white leading-relaxed">
-                        <MathText>{display.text}</MathText>
-                      </div>
-
-                      {/* Question Figure / Diagram */}
-                      <QuestionFigure question={q} />
-
-                      {/* Options List with Highlighting */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                        {q.options.map((opt, optIdx) => {
-                          const isRight = q.correctAnswerIndex === optIdx;
-                          const isUserPick = selected === optIdx;
-                          const optText = display.options[optIdx] ?? opt;
-
-                          let cardClass = 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
-                          if (isRight) {
-                            cardClass = 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold ring-1 ring-emerald-500';
-                          } else if (isUserPick && !isRight) {
-                            cardClass = 'bg-rose-50 dark:bg-rose-950/50 border-rose-500 text-rose-950 dark:text-rose-100 font-bold ring-1 ring-rose-500';
-                          }
-
-                          return (
-                            <div
-                              key={optIdx}
-                              className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all ${cardClass}`}
-                            >
-                              <div
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                                  isRight
-                                    ? 'bg-emerald-600 text-white'
-                                    : isUserPick
-                                    ? 'bg-rose-600 text-white'
-                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                                }`}
-                              >
-                                {String.fromCharCode(65 + optIdx)}
-                              </div>
-
-                              <div className="flex-1 text-xs sm:text-sm pt-1">
-                                <div><MathText>{optText}</MathText></div>
-                                {q.optionImages?.[optIdx] && (
-                                  <div className="mt-2 p-1 max-w-xs bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                                    <img
-                                      src={q.optionImages[optIdx]!}
-                                      alt={`Option ${String.fromCharCode(65 + optIdx)}`}
-                                      className="max-h-32 w-auto object-contain rounded"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-
-                              {isRight && (
-                                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-xs pt-1 shrink-0">
-                                  <Check size={14} />
-                                  <span>{questionLang === 'en' ? 'Correct' : 'सही'}</span>
-                                </div>
-                              )}
-
-                              {isUserPick && !isRight && (
-                                <div className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold text-xs pt-1 shrink-0">
-                                  <X size={14} />
-                                  <span>{questionLang === 'en' ? 'Your Choice' : 'आपका चयन'}</span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Explanation Box */}
-                      <div className="p-4 rounded-xl bg-blue-50/70 dark:bg-slate-800/80 border-l-4 border-blue-600 text-xs sm:text-sm space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-blue-900 dark:text-blue-300">
-                          <BookOpen size={15} />
-                          <span>{questionLang === 'en' ? 'Explanation:' : 'व्याख्या / Explanation:'}</span>
-                        </div>
-                        <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                          <MathText>{display.explanation || q.explanation || (questionLang === 'en' ? 'No explanation available.' : 'इस प्रश्न के लिए कोई अतिरिक्त व्याख्या उपलब्ध नहीं है।')}</MathText>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            );
-          })
+          filteredIndices.map(({ q, idx }) => (
+            <AnalysisQuestionCard
+              key={q.id || idx}
+              q={q}
+              idx={idx}
+              resp={attempt.responses[idx]}
+              questionLang={questionLang}
+            />
+          ))
         )}
       </div>
 

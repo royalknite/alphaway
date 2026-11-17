@@ -7,7 +7,9 @@ import {
   QuestionCollection,
   AppSettings,
   ActiveExamState,
-  NavigationTab
+  NavigationTab,
+  Question,
+  UserResponse
 } from './types';
 import { db, DEFAULT_SETTINGS } from './services/storage';
 import { soundManager } from './utils/audio';
@@ -31,6 +33,7 @@ import { SettingsView } from './components/settings/SettingsView';
 import { AndroidExportModal } from './components/android/AndroidExportModal';
 import { BottomNav } from './components/common/BottomNav';
 import { ConfirmModal } from './components/common/ConfirmModal';
+import { SplashScreen } from './components/common/SplashScreen';
 
 export function App() {
   // Database states
@@ -40,8 +43,10 @@ export function App() {
   const [collections, setCollections] = useState<QuestionCollection[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activeExam, setActiveExam] = useState<ActiveExamState | null>(null);
+  const [isResumingActiveExam, setIsResumingActiveExam] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isZipModalOpen, setIsZipModalOpen] = useState(false);
@@ -327,6 +332,7 @@ export function App() {
 
   // ---------------- Exam Execution & Submission ----------------
   const handleStartTest = (test: TestItem, mode: 'exam' | 'practice') => {
+    setIsResumingActiveExam(false);
     setCurrentActiveTest(test);
     if (mode === 'exam') {
       setCurrentTab('exam');
@@ -339,6 +345,7 @@ export function App() {
     if (!activeExam) return;
     const t = tests.find(item => item.id === activeExam.testId);
     if (t) {
+      setIsResumingActiveExam(true);
       setCurrentActiveTest(t);
       if (activeExam.mode === 'exam') {
         setCurrentTab('exam');
@@ -350,8 +357,9 @@ export function App() {
 
   const handleAutosaveState = useCallback(async (state: {
     testId: string;
+    questions: Question[];
     remainingSeconds: number;
-    responses: Record<number, any>;
+    responses: Record<number, UserResponse>;
     currentQuestionIndex: number;
   }) => {
     if (!currentActiveTest) return;
@@ -360,12 +368,13 @@ export function App() {
       attemptId: `temp_${state.testId}`,
       mode: 'exam',
       config: currentActiveTest.config,
-      questions: currentActiveTest.questions,
+      questions: state.questions,
       responses: state.responses,
       currentQuestionIndex: state.currentQuestionIndex,
       startedAt: Date.now() - (currentActiveTest.config.durationMinutes * 60 - state.remainingSeconds) * 1000,
       remainingSeconds: state.remainingSeconds
     };
+    setActiveExam(examState);
     await db.saveActiveExamState(examState);
   }, [currentActiveTest]);
 
@@ -377,6 +386,7 @@ export function App() {
     await db.saveAttempt(attempt);
     await db.saveActiveExamState(null); // Clear active exam cache
     setActiveExam(null);
+    setIsResumingActiveExam(false);
 
     setAttempts(await db.getAttempts());
     setTests(await db.getTests()); // refresh updated stats
@@ -409,31 +419,31 @@ export function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-2xl shadow-xl animate-bounce">
-          📖
-        </div>
-        <div className="font-extrabold text-xl text-slate-800 dark:text-slate-200">
-          AlphaWay Test Platform
-        </div>
-        <p className="text-xs text-slate-400">डिजिटल टेक्स्टबुक एवं डेटाबेस लोड हो रहा है...</p>
-      </div>
+      <SplashScreen
+        isDataReady={false}
+        onFinish={() => setShowSplash(false)}
+      />
     );
   }
 
   // If in fullscreen exam or practice mode, render interface directly without default layout chrome
   if (currentTab === 'exam' && currentActiveTest) {
+    const shouldResume = isResumingActiveExam && activeExam?.testId === currentActiveTest.id;
     return (
       <ExamInterface
         test={currentActiveTest}
-        initialQuestions={activeExam?.testId === currentActiveTest.id ? activeExam.questions : undefined}
-        initialResponses={activeExam?.testId === currentActiveTest.id ? activeExam.responses : undefined}
-        initialRemainingSeconds={activeExam?.testId === currentActiveTest.id ? activeExam.remainingSeconds : undefined}
-        initialQuestionIndex={activeExam?.testId === currentActiveTest.id ? activeExam.currentQuestionIndex : 0}
+        initialQuestions={shouldResume ? activeExam.questions : undefined}
+        initialResponses={shouldResume ? activeExam.responses : undefined}
+        initialRemainingSeconds={shouldResume ? activeExam.remainingSeconds : undefined}
+        initialQuestionIndex={shouldResume ? activeExam.currentQuestionIndex : 0}
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
         onSubmitExam={handleSubmitExamAttempt}
-        onExitWithoutSubmit={() => { setCurrentActiveTest(null); setCurrentTab('home'); }}
+        onExitWithoutSubmit={() => {
+          setIsResumingActiveExam(false);
+          setCurrentActiveTest(null);
+          setCurrentTab('home');
+        }}
         onAutosaveState={handleAutosaveState}
       />
     );
@@ -453,6 +463,12 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
+      {showSplash && (
+        <SplashScreen
+          isDataReady={!isLoading}
+          onFinish={() => setShowSplash(false)}
+        />
+      )}
       {/* 1. Header */}
       <Header
         currentTab={currentTab}

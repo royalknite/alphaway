@@ -1,4 +1,5 @@
 import { Question } from '../types';
+import { normalizeHindiText } from './hindiNormalizer';
 
 export interface TranslatedContent {
   text: string;
@@ -6,7 +7,7 @@ export interface TranslatedContent {
   explanation: string;
 }
 
-// 1. Curated professional English translations for all 20 questions in the user's Time & Work exam
+// 1. Curated professional English translations for all 20 questions in the Time & Work exam
 const TIME_AND_WORK_TRANSLATIONS: Record<number, { text: string; options: string[]; explanation: string }> = {
   26: {
     text: 'Ankit, Brijesh, and Charu were employed to do a work for ₹2209. Ankit and Brijesh together complete ³¹⁄₄₇ of the work, and Brijesh and Charu together complete ²¹⁄₄₇ of the work. What amount should be paid to Ankit?',
@@ -139,120 +140,221 @@ export function isHindiText(text: string): boolean {
   return /[\u0900-\u097F]/.test(text || '');
 }
 
-// Comprehensive phrase replacements for arbitrary competitive examination questions
+// Helper: check if text has English prose (words of >= 2 Latin letters outside pure SI units)
+function hasEnglishProse(text: string): boolean {
+  if (!text) return false;
+  const cleaned = maskScientificContent(text).masked;
+  return /\b[a-zA-Z]{2,}\b/.test(cleaned);
+}
+
+// Unicode-safe boundary builders: NEVER match inside Devanagari words (e.g. 'नल' inside 'निम्नलिखित')
+const HI_START = '(?<![\\u0900-\\u097F])';
+const HI_END = '(?![\\u0900-\\u097F])';
+const hiPhrase = (pattern: string) => new RegExp(`${HI_START}(?:${pattern})${HI_END}`, 'g');
+const enPhrase = (pattern: string) => new RegExp(`(?<![a-zA-Z])(?:${pattern})(?![a-zA-Z])`, 'gi');
+
+// Sentence-level and safe whole-word offline fallbacks (never break intra-word Hindi Devanagari)
 const HINDI_PHRASE_TRANSLATIONS: [RegExp, string][] = [
-  // Sentence-level patterns
-  [/निम्नलिखित में से कौन-सा कथन सत्य है\??/gi, 'Which of the following statements is true?'],
-  [/निम्नलिखित में से कौन-सा कथन असत्य है\??/gi, 'Which of the following statements is false?'],
-  [/निम्नलिखित में से कौन सा सही है\??/gi, 'Which of the following is correct?'],
-  [/निम्नलिखित में से किसकी स्थापना/gi, 'Which of the following was established'],
-  [/भारतीय संविधान के किस अनुच्छेद में/gi, 'In which article of the Indian Constitution'],
-  [/भारत की राजधानी क्या है\??/gi, 'What is the capital of India?'],
-  [/बिहार का राज्य पक्षी क्या है\??/gi, 'What is the state bird of Bihar?'],
-  [/दिए गए विकल्पों में से सही उत्तर का चयन कीजिए/gi, 'Select the correct answer from the given options'],
-  [/कार्य को पूरा करने में लगा कुल समय ज्ञात कीजिए/gi, 'Find the total time taken to complete the work'],
-  [/टंकी को पूर्णतः भरने में लगने वाला समय ज्ञात कीजिए/gi, 'Find the time required to completely fill the tank'],
-  [/शेष कार्य को कितने दिनों में पूरा करेगा\??/gi, 'In how many days will the remaining work be completed?'],
-  [/कितने दिनों में पूरा कर सकता है\??/gi, 'In how many days can it be completed?'],
-  [/कितने समय में भर जाएगी\??/gi, 'In what time will it be filled?'],
-  [/का मान ज्ञात कीजिए/gi, 'find the value of'],
-  [/का मान क्या होगा\??/gi, 'What will be the value of?'],
-  
-  // Math & Vocabulary replacements
-  [/क्रमशः/gi, 'respectively'],
-  [/एकसाथ कार्य करते हैं/gi, 'work together'],
-  [/एकसाथ काम करते हुए/gi, 'working together'],
-  [/किसी कार्य को/gi, 'a piece of work'],
-  [/दक्षता/gi, 'efficiency'],
-  [/कार्यक्षमता/gi, 'efficiency'],
-  [/समान दक्षता/gi, 'equal efficiency'],
-  [/अकेले/gi, 'alone'],
-  [/घंटे में/gi, 'hours'],
-  [/घंटों में/gi, 'hours'],
-  [/घंटे/gi, 'hours'],
-  [/घंटा/gi, 'hour'],
-  [/दिनों में/gi, 'days'],
-  [/दिन में/gi, 'days'],
-  [/दिन/gi, 'days'],
-  [/मिनटों में/gi, 'minutes'],
-  [/मिनट में/gi, 'minutes'],
-  [/मिनट/gi, 'minutes'],
-  [/सेकंड/gi, 'seconds'],
-  [/टंकी/gi, 'tank'],
-  [/टैंक/gi, 'tank'],
-  [/कुंड/gi, 'cistern'],
-  [/पाइप/gi, 'pipe'],
-  [/नल/gi, 'tap'],
-  [/प्रवेश पाइप/gi, 'inlet pipe'],
-  [/निकास पाइप/gi, 'outlet pipe'],
-  [/पूर्ण रूप से/gi, 'completely'],
-  [/पूर्णतः/gi, 'completely'],
-  [/खाली कर सकता है/gi, 'can empty'],
-  [/भर सकता है/gi, 'can fill'],
-  [/भर सकती है/gi, 'can fill'],
-  [/खोल दिया जाए/gi, 'is opened'],
-  [/बंद कर दिया जाता है/gi, 'is closed'],
-  [/बंद कर दिया गया/gi, 'was closed'],
-  [/अतिरिक्त समय/gi, 'additional time'],
-  [/शेष भाग/gi, 'remaining part'],
-  [/शेष कार्य/gi, 'remaining work'],
-  [/मजदूरों/gi, 'workers'],
-  [/मजदूर/gi, 'workers'],
-  [/व्यक्ति/gi, 'persons'],
-  [/व्याख्या/gi, 'Explanation'],
-  [/हल/gi, 'Solution'],
-  [/उत्तर/gi, 'Answer'],
-  [/विकल्प/gi, 'Option']
+  [hiPhrase('निम्नलिखित में से कौन-सा कथन सत्य है\\??'), 'Which of the following statements is true?'],
+  [hiPhrase('निम्नलिखित में से कौन-सा कथन असत्य है\\??'), 'Which of the following statements is false?'],
+  [hiPhrase('निम्नलिखित में से कौन सा सही है\\??'), 'Which of the following is correct?'],
+  [hiPhrase('निम्नलिखित में से कौन-सा सही है\\??'), 'Which of the following is correct?'],
+  [hiPhrase('निम्नलिखित में से किसकी स्थापना'), 'Which of the following was established'],
+  [hiPhrase('भारतीय संविधान के किस अनुच्छेद में'), 'In which article of the Indian Constitution'],
+  [hiPhrase('भारत की राजधानी क्या है\\??'), 'What is the capital of India?'],
+  [hiPhrase('बिहार का राज्य पक्षी क्या है\\??'), 'What is the state bird of Bihar?'],
+  [hiPhrase('दिए गए विकल्पों में से सही उत्तर का चयन कीजिए'), 'Select the correct answer from the given options'],
+  [hiPhrase('कार्य को पूरा करने में लगा कुल समय ज्ञात कीजिए'), 'Find the total time taken to complete the work'],
+  [hiPhrase('टंकी को पूर्णतः भरने में लगने वाला समय ज्ञात कीजिए'), 'Find the time required to completely fill the tank'],
+  [hiPhrase('शेष कार्य को कितने दिनों में पूरा करेगा\\??'), 'In how many days will the remaining work be completed?'],
+  [hiPhrase('कितने दिनों में पूरा कर सकता है\\??'), 'In how many days can it be completed?'],
+  [hiPhrase('कितने समय में भर जाएगी\\??'), 'In what time will it be filled?'],
+  [hiPhrase('का मान ज्ञात कीजिए'), 'find the value of'],
+  [hiPhrase('का मान क्या होगा\\??'), 'What will be the value of?'],
+  [hiPhrase('घंटे में'), 'hours'],
+  [hiPhrase('घंटों में'), 'hours'],
+  [hiPhrase('घंटे'), 'hours'],
+  [hiPhrase('घंटा'), 'hour'],
+  [hiPhrase('दिनों में'), 'days'],
+  [hiPhrase('दिन में'), 'days'],
+  [hiPhrase('दिन'), 'days'],
+  [hiPhrase('मिनटों में'), 'minutes'],
+  [hiPhrase('मिनट में'), 'minutes'],
+  [hiPhrase('मिनट'), 'minutes'],
+  [hiPhrase('सेकंड'), 'seconds'],
+  [hiPhrase('क्रमशः'), 'respectively'],
+  [hiPhrase('एकसाथ कार्य करते हैं'), 'work together'],
+  [hiPhrase('एकसाथ काम करते हुए'), 'working together'],
+  [hiPhrase('किसी कार्य को'), 'a piece of work'],
+  [hiPhrase('दक्षता'), 'efficiency'],
+  [hiPhrase('कार्यक्षमता'), 'efficiency'],
+  [hiPhrase('समान दक्षता'), 'equal efficiency'],
+  [hiPhrase('अकेले'), 'alone'],
+  [hiPhrase('टंकी'), 'tank'],
+  [hiPhrase('टैंक'), 'tank'],
+  [hiPhrase('कुंड'), 'cistern'],
+  [hiPhrase('पाइप'), 'pipe'],
+  [hiPhrase('नल'), 'tap'],
+  [hiPhrase('प्रवेश पाइप'), 'inlet pipe'],
+  [hiPhrase('निकास पाइप'), 'outlet pipe'],
+  [hiPhrase('पूर्ण रूप से'), 'completely'],
+  [hiPhrase('पूर्णतः'), 'completely'],
+  [hiPhrase('खाली कर सकता है'), 'can empty'],
+  [hiPhrase('भर सकता है'), 'can fill'],
+  [hiPhrase('भर सकती है'), 'can fill'],
+  [hiPhrase('खोल दिया जाए'), 'is opened'],
+  [hiPhrase('बंद कर दिया जाता है'), 'is closed'],
+  [hiPhrase('बंद कर दिया गया'), 'was closed'],
+  [hiPhrase('अतिरिक्त समय'), 'additional time'],
+  [hiPhrase('शेष भाग'), 'remaining part'],
+  [hiPhrase('शेष कार्य'), 'remaining work'],
+  [hiPhrase('मजदूरों'), 'workers'],
+  [hiPhrase('मजदूर'), 'workers'],
+  [hiPhrase('व्यक्ति'), 'persons'],
+  [hiPhrase('व्याख्या'), 'Explanation'],
+  [hiPhrase('हल'), 'Solution'],
+  [hiPhrase('उत्तर'), 'Answer'],
+  [hiPhrase('विकल्प'), 'Option']
 ];
 
 const ENGLISH_PHRASE_TRANSLATIONS: [RegExp, string][] = [
-  [/Which of the following statements is true\??/gi, 'निम्नलिखित में से कौन-सा कथन सत्य है?'],
-  [/Which of the following statements is false\??/gi, 'निम्नलिखित में से कौन-सा कथन असत्य है?'],
-  [/Which of the following is correct\??/gi, 'निम्नलिखित में से कौन-सा सही है?'],
-  [/What is the capital of India\??/gi, 'भारत की राजधानी क्या है?'],
-  [/Find the value of/gi, 'मान ज्ञात कीजिए'],
-  [/Find the total time taken/gi, 'कुल लगा समय ज्ञात कीजिए'],
-  [/respectively/gi, 'क्रमशः'],
-  [/working together/gi, 'एकसाथ कार्य करते हुए'],
-  [/work together/gi, 'एकसाथ कार्य करते हैं'],
-  [/efficiency/gi, 'दक्षता'],
-  [/alone/gi, 'अकेले'],
-  [/hours/gi, 'घंटे'],
-  [/hour/gi, 'घंटा'],
-  [/days/gi, 'दिन'],
-  [/minutes/gi, 'मिनट'],
-  [/tank/gi, 'टंकी'],
-  [/cistern/gi, 'कुंड'],
-  [/inlet pipe/gi, 'प्रवेश पाइप'],
-  [/outlet pipe/gi, 'निकास पाइप'],
-  [/can fill/gi, 'भर सकता है'],
-  [/can empty/gi, 'खाली कर सकता है'],
-  [/Explanation/gi, 'व्याख्या'],
-  [/Solution/gi, 'हल'],
-  [/Answer/gi, 'उत्तर']
+  [enPhrase('Which of the following statements is true\\??'), 'निम्नलिखित में से कौन-सा कथन सत्य है?'],
+  [enPhrase('Which of the following statements is false\\??'), 'निम्नलिखित में से कौन-सा कथन असत्य है?'],
+  [enPhrase('Which of the following is correct\\??'), 'निम्नलिखित में से कौन-सा सही है?'],
+  [enPhrase('What is the capital of India\\??'), 'भारत की राजधानी क्या है?'],
+  [enPhrase('Find the value of'), 'मान ज्ञात कीजिए'],
+  [enPhrase('Find the total time taken'), 'कुल लगा समय ज्ञात कीजिए'],
+  [enPhrase('respectively'), 'क्रमशः'],
+  [enPhrase('working together'), 'एकसाथ कार्य करते हुए'],
+  [enPhrase('work together'), 'एकसाथ कार्य करते हैं'],
+  [enPhrase('efficiency'), 'दक्षता'],
+  [enPhrase('alone'), 'अकेले'],
+  [enPhrase('hours'), 'घंटे'],
+  [enPhrase('hour'), 'घंटा'],
+  [enPhrase('days'), 'दिन'],
+  [enPhrase('minutes'), 'मिनट'],
+  [enPhrase('tank'), 'टंकी'],
+  [enPhrase('cistern'), 'कुंड'],
+  [enPhrase('inlet pipe'), 'प्रवेश पाइप'],
+  [enPhrase('outlet pipe'), 'निकास पाइप'],
+  [enPhrase('can fill'), 'भर सकता है'],
+  [enPhrase('can empty'), 'खाली कर सकता है'],
+  [enPhrase('Explanation'), 'व्याख्या'],
+  [enPhrase('Solution'), 'हल'],
+  [enPhrase('Answer'), 'उत्तर']
 ];
+
+/**
+ * Masks LaTeX, MathML, equations, chemical formulas, numbers with SI/scientific
+ * units, and standalone scientific units so translation engines never alter them
+ * (e.g. `60 J` stays `60 J`, never `60 जे`).
+ */
+export function maskScientificContent(value: string): { masked: string; tokens: string[] } {
+  const tokens: string[] = [];
+  const stash = (match: string) => {
+    const idx = tokens.length;
+    tokens.push(match);
+    return `[[MT_${idx}]]`;
+  };
+
+  let masked = value;
+
+  // 1. LaTeX & MathML blocks
+  masked = masked.replace(
+    /(<math\b[\s\S]*?<\/math>|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/gi,
+    stash
+  );
+
+  // 2. Equations / algebraic expressions with '=' (e.g. F = ma, KE = 1/2 mv^2, v = u + at, F = m × a)
+  masked = masked.replace(
+    /(?<![a-zA-Z\u0900-\u097F])[A-Za-zθφωαβγΔλμρσΩ][A-Za-z0-9θφωαβγΔλμρσΩ₀-₉²³¹⁰-⁹]*\s*=\s*[A-Za-z0-9θφωαβγΔλμρσΩ₀-₉²³¹⁰-⁹½⅓¼¾√π+\-−*/×÷·^().\s]+(?=[,.;:?!\s\)]|$)/g,
+    (m) => stash(m.trimEnd())
+  );
+
+  // 3. Chemical formulas (must include digit, Unicode subscript, dot, or parentheses to avoid ordinary caps words)
+  masked = masked.replace(
+    /(?<![a-zA-Z\u0900-\u097F])(?=(?:[A-Za-z0-9₀-₉()·]*[\d₀-₉·()]))(?:[A-Z][a-z]?(?:[₀-₉]+|\d+)?(?:\([A-Za-z0-9₀-₉]+\)(?:[₀-₉]+|\d+)?)?){2,}(?:·\d*[A-Za-z0-9₀-₉]+)*(?![a-zA-Z\u0900-\u097F])/g,
+    stash
+  );
+
+  // 4. Numbers (including scientific notation) + SI / physics / chemistry / math units (e.g. 60 J, 60J, 20 N, 5 kg, 20,000 Hz, 9.8 m/s²)
+  const unitAtom =
+    '(?:°[CF]|℃|℉|%|Ω|kΩ|MΩ|μF|μA|μV|μg|μm|μs|kHz|MHz|GHz|Hz|kWh|Wh|kJ|MJ|mJ|J|kN|mN|Nm|N|kW|MW|GW|mW|W|kV|mV|V|kA|mA|Ah|mAh|A|kPa|MPa|hPa|Pa|atm|bar|mmHg|torr|mC|nC|C|nF|pF|F|mH|H|mT|T|Wb|lm|lx|Bq|Gy|Sv|kat|keV|MeV|GeV|eV|mol|mmol|cd|rad|sr|kcal|cal|dB|hp|amu|kg|mg|g|km|cm|mm|nm|pm|fm|Å|ly|AU|pc|m|ms|ns|min|hrs|hr|s|h|mL|ml|cc|L|kmph|rpm|a\\.m\\.|p\\.m\\.|K)';
+  const numWithUnitRegex = new RegExp(
+    `(?<![a-zA-Z\\u0900-\\u097F])[+-]?\\d+(?:[.,]\\d+)?(?:\\s*[×x*]\\s*10(?:\\^-?\\d+|[⁻⁺]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+))?\\s*${unitAtom}(?:[\\/·*]${unitAtom})*(?:\\^-?\\d+|[⁻⁺]?[⁰¹²³⁴⁵⁶⁷⁸⁹²³]+)?(?![a-zA-Z\\u0900-\\u097F])`,
+    'g'
+  );
+  masked = masked.replace(numWithUnitRegex, stash);
+
+  // 5. Standalone compound units or non-word scientific unit tokens (m/s², km/h, Hz, kWh, Ω, °C, cm³, etc.)
+  const standaloneCompoundUnitRegex =
+    /(?<![a-zA-Z0-9\u0900-\u097F])(?:°[CF]|℃|℉|Ω|kΩ|MΩ|μF|μA|μV|μg|μm|μs|kHz|MHz|GHz|Hz|kWh|kJ|MJ|mJ|kN|mN|kW|MW|GW|mW|kV|mV|kA|mA|mAh|kPa|MPa|hPa|Pa|atm|mmHg|torr|keV|MeV|GeV|eV|mol|mmol|kcal|cal|dB|hp|amu|kg|mg|km|cm|mm|nm|pm|fm|Å|ms|ns|mL|ml|cc|kmph|rpm|m\/s²|m\/s\^2|m\/s|km\/h|km\/hr|kg\/m³|g\/cm³|N\/m²|J\/kg|cm²|cm³|m²|m³|km²)(?:\^-?\d+|[⁻⁺]?[⁰¹²³⁴⁵⁶⁷⁸⁹²³]+)?(?![a-zA-Z0-9\u0900-\u097F])/g;
+  masked = masked.replace(standaloneCompoundUnitRegex, stash);
+
+  // 6. Pure numeric expressions / fractions / currencies (e.g. ₹2209, 20 - 5, ³¹⁄₄₇, 5⅓)
+  masked = masked.replace(
+    /(?<![a-zA-Z\u0900-\u097F])(?:₹\s*\d+(?:[.,]\d+)?|\d+\s*[⁺⁻⁰¹²³⁴⁵⁶⁷⁸⁹]*[⁄/][₀-₉\d]+|[⁰¹²³⁴⁵⁶⁷⁸⁹]+[⁄/][₀-₉]+)(?![a-zA-Z\u0900-\u097F])/g,
+    stash
+  );
+
+  // 7. Standalone single-letter SI/variable symbols inside parentheses or isolated in short unit expressions
+  masked = masked.replace(/\(([JNWVAKCTHFLmgs])\)/g, stash);
+
+  return { masked, tokens };
+}
+
+export function restoreScientificContent(translated: string, tokens: string[]): string {
+  return translated
+    .replace(/\[\[\s*MT[_\s-]*(\d+)\s*\]\]/gi, (_, i) => tokens[Number(i)] ?? '')
+    .replace(/__\s*MATH_TOKEN_(\d+)\s*__/gi, (_, i) => tokens[Number(i)] ?? '');
+}
+
+/**
+ * Returns true if the text consists solely of numbers, SI units, formulas,
+ * chemical symbols, or option markers (no natural-language prose to translate).
+ */
+export function isPureFormulaOrUnit(value: string): boolean {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return true;
+  if (isHindiText(trimmed)) return false;
+
+  const { masked } = maskScientificContent(trimmed);
+  const withoutTokens = masked.replace(/\[\[MT_\d+\]\]/g, ' ').trim();
+  // Remove numbers, operators, punctuation, and single-letter math/SI symbols
+  const remainingProse = withoutTokens
+    .replace(/[0-9.,+\-−*/=^()%°′″×÷√πθφωαβγΔλμρσΩ²³¹⁰-⁹₀-₉½⅓¼¾⅙⅛⅜⅝⅞:;\[\]{}<>≤≥≠≈·•?!&\s₹$]/g, ' ')
+    .trim();
+
+  if (!remainingProse) return true;
+  // If only single-letter option/SI/variable letters remain (e.g. "J", "N", "x", "A"), skip translation
+  const words = remainingProse.split(/\s+/).filter(Boolean);
+  return words.every((w) => w.length <= 1);
+}
 
 export function translateHindiToEnglish(text: string): string {
   if (!text) return '';
-  let result = text;
+  let result = normalizeHindiText(text);
+  const { masked, tokens } = maskScientificContent(result);
+  let working = masked;
   for (const [regex, replacement] of HINDI_PHRASE_TRANSLATIONS) {
-    result = result.replace(regex, replacement);
+    working = working.replace(regex, replacement);
   }
-  return result;
+  return restoreScientificContent(working, tokens);
 }
 
 export function translateEnglishToHindi(text: string): string {
   if (!text) return '';
-  let result = text;
+  const { masked, tokens } = maskScientificContent(text);
+  let working = masked;
   for (const [regex, replacement] of ENGLISH_PHRASE_TRANSLATIONS) {
-    result = result.replace(regex, replacement);
+    working = working.replace(regex, replacement);
   }
-  return result;
+  return restoreScientificContent(working, tokens);
 }
 
 /**
- * Returns translated content (text, options, explanation) for the given question and target language ('en' | 'hi').
- * Whenever the user changes the language dropdown, this returns the exact translated version immediately.
+ * Returns localized content (text, options, explanation) for the given question and target language ('en' | 'hi').
+ * Preserves accurate Devanagari Unicode without intra-word corruption.
  */
 export function getQuestionDisplay(
   q: Question,
@@ -264,7 +366,6 @@ export function getQuestionDisplay(
 
   // TARGET: ENGLISH
   if (targetLang === 'en') {
-    // 1. Explicit English property on the question
     if (q.textEnglish && q.textEnglish.trim().length > 0) {
       return {
         text: q.textEnglish,
@@ -273,7 +374,6 @@ export function getQuestionDisplay(
       };
     }
 
-    // 2. Direct match by question number in curated Time & Work translations (Q26 to Q45)
     if (TIME_AND_WORK_TRANSLATIONS[q.number]) {
       const match = TIME_AND_WORK_TRANSLATIONS[q.number];
       return {
@@ -283,7 +383,6 @@ export function getQuestionDisplay(
       };
     }
 
-    // 3. Signature regex match on question text (in case questions were re-numbered 1 to 20)
     for (const sig of SIGNATURE_MAP) {
       if (sig.match.test(q.text)) {
         const match = TIME_AND_WORK_TRANSLATIONS[sig.qNumber];
@@ -297,79 +396,82 @@ export function getQuestionDisplay(
       }
     }
 
-    // 4. If already in English (no Hindi Devanagari)
-    if (!isHindiText(q.text)) {
+    // If pure English or already bilingual (contains complete English prose + Hindi),
+    // return cleanly normalized text without mixing Hinglish substitutions into Devanagari.
+    if (!isHindiText(q.text) || hasEnglishProse(q.text)) {
       return {
-        text: q.text,
-        options: q.options,
-        explanation: q.explanation
+        text: normalizeHindiText(q.text),
+        options: q.options.map((o) => normalizeHindiText(o)),
+        explanation: normalizeHindiText(q.explanation)
       };
     }
 
-    // 5. Fallback: Rule-based sentence translation from Hindi to English
     return {
-      text: translateHindiToEnglish(q.text),
-      options: q.options.map(opt => translateHindiToEnglish(opt)),
-      explanation: translateHindiToEnglish(q.explanation)
+      text: normalizeHindiText(q.text),
+      options: q.options.map((opt) => normalizeHindiText(opt)),
+      explanation: normalizeHindiText(q.explanation)
     };
   }
 
   // TARGET: HINDI
   if (targetLang === 'hi') {
-    // 1. Explicit Hindi property on the question
     if (q.textHindi && q.textHindi.trim().length > 0) {
       return {
-        text: q.textHindi,
-        options: q.optionsHindi && q.optionsHindi.length === q.options.length ? q.optionsHindi : q.options,
-        explanation: q.explanationHindi || q.explanation
+        text: normalizeHindiText(q.textHindi),
+        options: (q.optionsHindi && q.optionsHindi.length === q.options.length ? q.optionsHindi : q.options).map((o) =>
+          normalizeHindiText(o)
+        ),
+        explanation: normalizeHindiText(q.explanationHindi || q.explanation)
       };
     }
 
-    // 2. If the original text is already in Hindi, return it directly
     if (isHindiText(q.text)) {
       return {
-        text: q.text,
-        options: q.options,
-        explanation: q.explanation
+        text: normalizeHindiText(q.text),
+        options: q.options.map((o) => (isPureFormulaOrUnit(o) ? o : normalizeHindiText(o))),
+        explanation: normalizeHindiText(q.explanation)
       };
     }
 
-    // 3. Fallback: Translate from English to Hindi
     return {
-      text: translateEnglishToHindi(q.text),
-      options: q.options.map(opt => translateEnglishToHindi(opt)),
-      explanation: translateEnglishToHindi(q.explanation)
+      text: isPureFormulaOrUnit(q.text) ? q.text : translateEnglishToHindi(q.text),
+      options: q.options.map((opt) => (isPureFormulaOrUnit(opt) ? opt : translateEnglishToHindi(opt))),
+      explanation: isPureFormulaOrUnit(q.explanation) ? q.explanation : translateEnglishToHindi(q.explanation)
     };
   }
 
   return {
-    text: q.text,
-    options: q.options,
-    explanation: q.explanation
+    text: normalizeHindiText(q.text),
+    options: q.options.map((o) => normalizeHindiText(o)),
+    explanation: normalizeHindiText(q.explanation)
   };
 }
 
-
 // Online fallback for questions that do not contain a saved bilingual version.
-// The translated result is cached locally so a question is not translated again.
+// Cached locally so each string is only translated once.
 const translationCache = new Map<string, string>();
 
-async function translateWithGoogle(text: string, targetLang: 'en' | 'hi'): Promise<string> {
+export async function translateWithGoogle(text: string, targetLang: 'en' | 'hi'): Promise<string> {
   const value = (text || '').trim();
   if (!value) return text || '';
+
+  // Never send pure formulas, numbers, or SI unit options (e.g. "60 J", "9.8 m/s²") to translation
+  if (isPureFormulaOrUnit(value)) {
+    return value;
+  }
+
   const cacheKey = `${targetLang}:${value}`;
   const cached = translationCache.get(cacheKey);
   if (cached) return cached;
 
-  const maskedMath: string[] = [];
-  const protectedText = value.replace(
-    /(<math\b[\s\S]*?<\/math>|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/gi,
-    (match) => {
-      const idx = maskedMath.length;
-      maskedMath.push(match);
-      return `__MATH_TOKEN_${idx}__`;
-    }
-  );
+  const { masked: protectedText, tokens: maskedMath } = maskScientificContent(value);
+
+  // Check again if anything translatable remains outside tokens
+  const proseLeft = protectedText.replace(/\[\[MT_\d+\]\]/g, '').replace(/[^a-zA-Z\u0900-\u097F]/g, '');
+  if (!proseLeft) {
+    translationCache.set(cacheKey, value);
+    return value;
+  }
 
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(protectedText)}`;
@@ -377,28 +479,30 @@ async function translateWithGoogle(text: string, targetLang: 'en' | 'hi'): Promi
     if (!response.ok) throw new Error(`Translation request failed: ${response.status}`);
     const data = await response.json();
     const rawTranslated = Array.isArray(data?.[0])
-      ? data[0].map((part: any) => Array.isArray(part) ? part[0] : '').join('')
+      ? data[0].map((part: any) => (Array.isArray(part) ? part[0] : '')).join('')
       : '';
     if (!rawTranslated.trim()) throw new Error('Empty translation response');
-    const translated = rawTranslated.replace(/__\s*MATH_TOKEN_(\d+)\s*__/gi, (_, i) => maskedMath[Number(i)] ?? '');
-    translationCache.set(cacheKey, translated);
-    return translated;
+    const restored = restoreScientificContent(rawTranslated, maskedMath);
+    const finalText = targetLang === 'hi' || isHindiText(restored) ? normalizeHindiText(restored) : restored;
+    translationCache.set(cacheKey, finalText);
+    return finalText;
   } catch (error) {
     console.warn('Question translation unavailable; showing original text.', error);
-    return value;
+    return isHindiText(value) ? normalizeHindiText(value) : value;
   }
 }
 
-/** Async bilingual display: keeps curated/saved translations, and translates all
- * question content (stem, every option and explanation) when no saved version exists. */
+/**
+ * Async bilingual display: keeps curated/saved translations, preserves valid
+ * Devanagari & scientific formulas/SI units, and translates natural prose when needed.
+ */
 export async function getQuestionDisplayAsync(
   q: Question,
   targetLang: 'en' | 'hi'
 ): Promise<TranslatedContent> {
   if (!q) return { text: '', options: [], explanation: '' };
 
-  // Keep the hand-checked English translations already supplied for this set.
-  if (targetLang === 'en' && (TIME_AND_WORK_TRANSLATIONS[q.number] || SIGNATURE_MAP.some(sig => sig.match.test(q.text)))) {
+  if (targetLang === 'en' && (TIME_AND_WORK_TRANSLATIONS[q.number] || SIGNATURE_MAP.some((sig) => sig.match.test(q.text)))) {
     return getQuestionDisplay(q, targetLang);
   }
 
@@ -412,13 +516,26 @@ export async function getQuestionDisplayAsync(
 
   const translateIfNeeded = async (value: string): Promise<string> => {
     if (!value?.trim()) return value || '';
-    const alreadyTarget = targetLang === 'en' ? !isHindiText(value) : isHindiText(value);
-    return alreadyTarget ? value : translateWithGoogle(value, targetLang);
+    if (isPureFormulaOrUnit(value)) return value;
+
+    const cleanVal = isHindiText(value) ? normalizeHindiText(value) : value;
+
+    // If targeting English and the string is already bilingual (English + Hindi) or pure English,
+    // keep the original bilingual text intact rather than corrupting Devanagari or duplicating prose.
+    if (targetLang === 'en') {
+      if (!isHindiText(cleanVal)) return cleanVal;
+      if (hasEnglishProse(cleanVal)) return cleanVal;
+      return translateWithGoogle(cleanVal, 'en');
+    }
+
+    // Target Hindi
+    if (isHindiText(cleanVal)) return cleanVal;
+    return translateWithGoogle(cleanVal, 'hi');
   };
 
   const [text, options, explanation] = await Promise.all([
     translateIfNeeded(sourceText),
-    Promise.all(sourceOptions.map(option => translateIfNeeded(option))),
+    Promise.all(sourceOptions.map((option) => translateIfNeeded(option))),
     translateIfNeeded(sourceExplanation || '')
   ]);
 
